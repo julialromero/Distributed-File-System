@@ -34,9 +34,39 @@ int main(int argc, char **argv)
     delete(&info);
 }
 
+// TODO
 void do_list(struct client_info *info, char * fn, char * subfolder, char * buf){
-            // create socket and connect to servers
-        parse_config_and_connect(&info, config_path);
+    // create message linked list
+    create_linked_list();
+
+    // create socket and connect to servers
+    parse_config_and_connect(&info, config_path);
+
+    // file linked list
+    // parse message linked list and 
+    struct thread_message * crawl = thread_head;
+    char buf[MAXBUF];
+    bzero(buf, MAXBUF);
+    while(crawl != NULL){
+        if(crawl->msg == NULL){
+            crawl = crawl->next;
+            continue;
+        }
+
+        strcpy(buf, crawl->msg);
+        char * temp = strtok_r(buf, "\n", &buf);
+        while(temp != NULL){
+            insert_file_node(temp);
+            temp = strtok_r(buf, "\n", &buf);
+            
+        }
+        
+
+        bzero(buf, MAXBUF);
+    }
+
+    // delete message linked list
+    delete_linked_list;
 }
 
 void thread(void * argument) 

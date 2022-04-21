@@ -18,129 +18,55 @@
 #define LISTENQ  1024  /* second argument to listen() */
 #define MAXFILEBUF 60000
 
-struct arg_struct {
-    int arg1;
-};
+
 
 int main(int argc, char **argv) 
 {
-    struct arg_struct args;
-    int  *connfdp, clientlen=sizeof(struct sockaddr_in);
-    struct sockaddr_in clientaddr;
-    pthread_t tid; 
-    int serverfd1, serverfd2, serverfd3, serverfd4;
-
     if (argc != 2) {
         fprintf(stderr, "usage: %s <port>\n", argv[0]);
         exit(0);
     }
-    char * config_path = argv[1];
+    config_path = argv[1];
 
     struct client_info info;
-    parse_config(&info, config_path);
 
-    // ----- open socket for each server ----- //
-    printf("opening socket\n");
-    serverfd1 = open_sendfd(info.ip1, *info.port1);
-    if(serverfd1 == -1){
-        // send failure
-        printf("Failed to open socket\n");
-    }
-    // serverfd2 = open_sendfd(info.ip2, *info.port2);
-    // if(serverfd2 == -1){
-    //     // send failure
-    //     printf("Failed to open socket\n");
-    // }
-    // serverfd3 = open_sendfd(info.ip3, *info.port3);
-    // if(serverfd3 == -1){
-    //     // send failure
-    //     printf("Failed to open socket\n");
-    // }
-    // serverfd4 = open_sendfd(info.ip4, *info.port4);
-    // if(serverfd4 == -1){
-    //     // send failure
-    //     printf("Failed to open socket\n");
-    // }
-    info.serverfd1 = malloc(sizeof(serverfd1));
-    info.serverfd2 = malloc(sizeof(serverfd2));
-    info.serverfd3 = malloc(sizeof(serverfd3));
-    info.serverfd4 = malloc(sizeof(serverfd4));
-    *info.serverfd1 = serverfd1;
-    // *info.serverfd2 = serverfd2;
-    // *info.serverfd3 = serverfd3;
-    // *info.serverfd4 = serverfd4;
-
-
-    char buf[MAXBUF];
-    while(1){
-        /* get a message from the user */
-        printf("Enter one of the following commands:\n");
-        printf("list\nget [filename]\nput [filename]\n\n");
-        bzero(buf, MAXBUF);
-        fgets(buf, MAXBUF, stdin);
-
-        // Split the message on space
-        char * copy = strdup(buf);
-        char * cmd, *fn, *subfolder;
-        cmd = strdup(strtok_r(copy, " ", &copy));
-        fn = strtok_r(copy, " ", &copy);
-        if(fn != NULL){
-            fn = strdup(fn);
-            subfolder = strtok_r(copy, " ", &copy);
-            if(subfolder != NULL){
-                subfolder =  strdup(subfolder);
-            }
-        }
-
-        printf("cmd: %s\n", cmd);
-        if(fn != NULL){
-            printf("fn: %s\n", fn);
-        }
-
-        // construct the message to send, store in buf
-        create_msg(cmd, fn, subfolder, buf);
-
-        // call subroutines based on entered command
-        if(strcasecmp("list", cmd) == 0){
-            do_list();
-        }
-
-        if(strcasecmp("get", cmd) == 0){}
-
-        if(strcasecmp("put", cmd) == 0){}
-    
-    }
-
+    display_and_handle_menu(&info);
     delete(&info);
 }
 
+void do_list(struct client_info *info, char * fn, char * subfolder, char * buf){
+            // create socket and connect to servers
+        parse_config_and_connect(&info, config_path);
+}
 
-// void thread(void * argument) 
-// {  
-//     struct arg_struct *args = argument;
+void thread(void * argument) 
+{  
+    struct arg_struct *args = argument;
 
-//     int connfd = args->arg1;
-//     pthread_detach(pthread_self()); 
-//     //free(argument);
+    int connfd = args->connfdp;
+    pthread_detach(pthread_self()); 
+    //free(argument);
 
-//     while(1){
-//         // first read socket
-//         // read login
-//         size_t n; 
-//         char buf[MAXBUF]; 
-//         bzero(buf, MAXBUF);
+    while(1){
+        // first read socket
+        // read login
+        size_t n; 
+        char buf[MAXBUF]; 
+        bzero(buf, MAXBUF);
 
-//         n = read(connfd, buf, MAXBUF); 
-//         if(n < 0){
-//             return;
-//         }
-//         //parse_and_execute(buf, connfd);
-//     }
+        n = read(connfd, buf, MAXBUF); 
+        if(n < 0){
+            return;
+        }
+        //parse_and_execute(buf, connfd);
+    }
 
-//     close(connfd);
-//     printf("Connection closed.\n\n");
-//     return;
-// }
+
+    close(connfd);
+    free(args->connfdp);
+    printf("Connection closed.\n\n");
+    return;
+}
 
 int open_sendfd(char *ip, int port){
     int serverfd, optval=1;;

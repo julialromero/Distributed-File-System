@@ -2,17 +2,27 @@
 #include <stdlib.h>
 #include <string.h>      /* for fgets */
 #include <strings.h>     /* for bzero, bcopy */
-#include <unistd.h> 
-#include <dirent.h>
+#include <unistd.h>      /* for read, write */
+#include <sys/socket.h>  /* for socket use */
+#include <netdb.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <pthread.h>
+#include <fcntl.h>
 #include <errno.h>
 
 #include "ClientHelper.h"
 
 #define MAXBUF   8192 
 
-void do_list(){
+/*
+    TODO for list:
+    - send list command to all four ips
+    - 
+    - check if all 4 chunks are received
+    - if not then concat [incomplete] to end of ls
+*/
 
-}
 
 void create_msg(char *cmd, char *fn, char *subfolder, char *buf){
     bzero(buf, MAXBUF);
@@ -25,49 +35,61 @@ void create_msg(char *cmd, char *fn, char *subfolder, char *buf){
    return;
 }
 
-void parse_config(struct client_info *info, char * path){
-    // TODO: open file and parse this info
-    //FILE * fp;
+void parse_config_and_connect(struct client_info *info, char * path){
+    // open file and parse this info
+    FILE * fp;
+    fp = open(path, "rb");
+    char *ip, *port;
+    int portint;
+    
+    char *buf[MAXBUF];
+    bzero(buf, MAXBUF);
+    int num_bytes = fread(buf, 1, MAXBUF, fp);
 
-    char * user = "Alice";
-    char * pass = "SimplePassword";
-    char * ip = "127.0.0.1";
-    int port1 = atoi("10001");
-    int port2 = atoi("10002");
-    int port3 = atoi("10003");
-    int port4 = atoi("10004");
+    // parse info from config
+    char * temp = strtok_r(buf, " ", &buf);
+    info->user = strtok_r(buf, "\n", &buf);
+    info->user = strdup(info->user);
 
-    // allocate memory
-    info->user = malloc(strlen(user)); 
-    info->pass = malloc(strlen(pass));
+    temp = strtok_r(buf, " ", &buf);
+    temp = strtok_r(buf, " ", &buf);
+    info->pass = strtok_r(buf, "\n", &buf);
+    info->pass = strdup(info->pass);
 
-    info->ip1 = malloc(strlen(ip));
-    info->port1 = malloc(sizeof(port1));
+    while(1){
+        temp = strtok_r(buf, " ", &buf);
+        if(temp == NULL){
+            break;
+        }
+        temp = strtok_r(buf, " ", &buf);
+        ip = strtok_r(buf, ":", &buf);
+        ip = strdup(ip);
+        port = strtok_r(buf, "\n", &buf);
+        port = strdup(port);
+        portint = atoi(port);
+        connect_to_server(info, ip, portint);
+    }
+}
 
-    info->ip2 = malloc(strlen(ip));
-    info->port2 = malloc(sizeof(port2));
+void connect_to_server(struct client_info *info, char * ip, int port){
+    // ----- open socket for each server ----- //
+    printf("opening socket\n");
+    int i, serverfd;
+    int  *connfdp, clientlen=sizeof(struct sockaddr_in);
+    struct sockaddr_in clientaddr;
+    struct arg_struct args;
+    pthread_t tid; 
 
-    info->ip3 = malloc(strlen(ip));
-    info->port3 = malloc(sizeof(port3));
+    serverfd = open_sendfd(ip, port);
 
-    info->ip4 = malloc(strlen(ip));
-    info->port4 = malloc(sizeof(port4));
+    connfdp = malloc(sizeof(int));
+    *connfdp = accept(serverfd, (struct sockaddr*)&clientaddr, &clientlen);
+    args.connfdp = connfdp;
+    
+    pthread_create(&tid, NULL, thread, (void *)&info);
 
-    // assign values
-    strcpy(info->user,user);
-    strcpy(info->pass, pass);
 
-    strcpy(info->ip1, ip);
-    *info->port1 = port1;
-
-    strcpy(info->ip2, ip);
-    *info->port2 = port2;
-
-    strcpy(info->ip3, ip);
-    *info->port3 = port3;
-
-    strcpy(info->ip4, ip);
-    *info->port4 = port4;
+    // call next routine here
 
     return;
 }
@@ -75,16 +97,48 @@ void parse_config(struct client_info *info, char * path){
 void delete(struct client_info *info){
     free(info->user);
     free(info->pass);
-    free(info->ip1);
-    free(info->ip2);
-    free(info->ip3);
-    free(info->ip4);
-    free(info->port1);
-    free(info->port2);
-    free(info->port3);
-    free(info->port4);
-    free(info->serverfd1);
-    free(info->serverfd2);
-    free(info->serverfd3);
-    free(info->serverfd4);
 }
+
+void display_and_handle_menu(struct client_info *info){
+    char buf[MAXBUF];
+    while(1){
+        /* get a message from the user */
+        printf("Enter one of the following commands:\n");
+        printf("list\nget [filename]\nput [filename]\n\n");
+        bzero(buf, MAXBUF);
+        fgets(buf, MAXBUF, stdin);
+
+        // Split the message on space
+        char * copy = strdup(buf);
+        char * cmd, *fn, *subfolder;
+        cmd = strdup(strtok_r(copy, " ", &copy));
+        fn = strtok_r(copy, " ", &copy);
+        if(fn != NULL){
+            fn = strdup(fn);
+            subfolder = strtok_r(copy, " ", &copy);
+            if(subfolder != NULL){
+                subfolder =  strdup(subfolder);
+            }
+        }
+
+        printf("cmd: %s\n", cmd);
+        if(fn != NULL){
+            printf("fn: %s\n", fn);
+        }
+
+        // construct the message to send, store in buf
+        create_msg(cmd, fn, subfolder, buf);
+
+        // call subroutines based on entered command
+        if(strcasecmp("list", cmd) == 0){
+            do_list();
+        }
+
+        if(strcasecmp("get", cmd) == 0){}
+
+        if(strcasecmp("put", cmd) == 0){}
+
+        // wait for threads to end????
+    }
+}
+

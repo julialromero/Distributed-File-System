@@ -34,16 +34,14 @@ int main(int argc, char **argv)
     delete(&info);
 }
 
-// TODO
-void do_list(struct client_info *info, char * fn, char * subfolder, char * buf){
+void do_list(struct client_info *info, char * subfolder, char * buf){
     // create message linked list
     create_linked_list();
 
     // create socket and connect to servers
     parse_config_and_connect(&info, config_path);
 
-    // file linked list
-    // parse message linked list and 
+    // parse message linked list and populate file and chunk linked lists
     struct thread_message * crawl = thread_head;
     char buf[MAXBUF];
     bzero(buf, MAXBUF);
@@ -56,13 +54,29 @@ void do_list(struct client_info *info, char * fn, char * subfolder, char * buf){
         strcpy(buf, crawl->msg);
         char * temp = strtok_r(buf, "\n", &buf);
         while(temp != NULL){
-            insert_file_node(temp);
+            insert_file_and_chunk_node(temp, crawl, 1);
             temp = strtok_r(buf, "\n", &buf);
-            
         }
-        
-
         bzero(buf, MAXBUF);
+    }
+
+    // iterate through file linked list and display list to user
+    struct file_node * fcrawl = file_head;
+    if(file_head == NULL){
+        printf("Empty directory\n");
+        return;
+    }
+    compute_if_files_are_complete();
+
+    fcrawl = file_head;
+    printf("---Listing files---\n");
+    while(fcrawl != NULL){
+        printf("%s", fcrawl->filename);
+        if(fcrawl->is_complete != 1)
+        {
+            printf(" [incomplete]");
+        }        
+        printf("\n");
     }
 
     // delete message linked list
@@ -71,6 +85,10 @@ void do_list(struct client_info *info, char * fn, char * subfolder, char * buf){
 
 void thread(void * argument) 
 {  
+    /*
+        - TODO
+        - 
+    */
     struct arg_struct *args = argument;
 
     int connfd = args->connfdp;

@@ -143,22 +143,60 @@ void display_and_handle_menu(struct client_info *info){
     }
 }
 
-
-void insert_file_node(char * fn, struct thread_message *thread_node, int is_list){
-    // DO I HAVE TO DO CALLOC FOR STRUCT CHAR * ?????
+void insert_file_and_chunk_node(char * fn, struct thread_message *thread_node, int is_list){
     if(file_head == NULL){
         struct file_node * node = calloc(1, sizeof(struct file_node));
+        node->filename = calloc(1, strlen(fn));
         strcpy(node->filename, fn);
         file_head = node;
         node->next = NULL;
         
         // this function will populate the chunk linked list -- there will be a node for each unique received chunk/filename chunk 
         add_chunk(node, thread_node->msg, is_list);
-   
-        
         return;
     }
 
+    // if file linked list exists then search for matching node
+    struct file_node * crawl = file_head;
+    while(crawl != NULL){
+        // if file already is in linked list
+        if (strcmp(fn, crawl->filename) == 0){
+            add_chunk(crawl, thread_node->msg, is_list);
+            return;
+        }
+        // if this file is not in the linked list then insert it
+        if(crawl->next == NULL){
+            struct file_node * node = calloc(1, sizeof(struct file_node));
+            node->filename = calloc(1, strlen(fn));
+            strcpy(node->filename, fn);
+            node->next = NULL;
+            crawl->next = node;
+            return;
+        }
+        crawl = crawl->next;
+    }
+    return;
+}
+
+// for each file, tally up the number of unique chunks and mark if file is complete
+void compute_if_files_are_complete(){
+    struct file_node * crawl = file_head;
+    while(crawl != NULL){
+         struct chunk_node * chucrawl = crawl->head;
+        int sum = 0;
+        while(chucrawl != NULL){
+            sum += chucrawl->chunknum;
+            chucrawl = chucrawl->next;
+        }
+        // if all 4 parts are received, sum of chunknum is 10
+        if(sum == 10){
+            crawl->is_complete = 1;
+        }
+        else{
+            crawl->is_complete = 0;
+        }
+    }
+   return;
 }
 
 void add_chunk(struct file_node *filenode, char * chunk_msg, int is_list){

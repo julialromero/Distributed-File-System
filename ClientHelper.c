@@ -89,8 +89,9 @@ void connect_to_server(struct client_info *info, char * ip, int port, int count)
 
     args.connfdp = connfdp;
     args.server_num = count;
+    args.info = info;
     
-    pthread_create(&tid, NULL, thread, (void *)&info);
+    pthread_create(&tid, NULL, thread, (void *)&args);
 
     return;
 }
@@ -132,7 +133,7 @@ void display_and_handle_menu(struct client_info *info){
 
         // call subroutines based on entered command
         if(strcasecmp("list", cmd) == 0){
-            do_list();
+            do_list(buf);
         }
 
         if(strcasecmp("get", cmd) == 0){}
@@ -147,6 +148,7 @@ void insert_file_and_chunk_node(char * fn, struct thread_message *thread_node, i
     if(file_head == NULL){
         struct file_node * node = calloc(1, sizeof(struct file_node));
         node->filename = calloc(1, strlen(fn));
+        // TODO: make sure to remove chunk number from file number!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         strcpy(node->filename, fn);
         file_head = node;
         node->next = NULL;
@@ -182,7 +184,7 @@ void insert_file_and_chunk_node(char * fn, struct thread_message *thread_node, i
 void compute_if_files_are_complete(){
     struct file_node * crawl = file_head;
     while(crawl != NULL){
-         struct chunk_node * chucrawl = crawl->head;
+        struct chunk_node * chucrawl = crawl->head;
         int sum = 0;
         while(chucrawl != NULL){
             sum += chucrawl->chunknum;
@@ -201,9 +203,45 @@ void compute_if_files_are_complete(){
 
 void add_chunk(struct file_node *filenode, char * chunk_msg, int is_list){
     // this function will create a chunk node and add it to the chunk linked list
-    // if is-list is 1 then it will just update chunknode->chunkname and chunknode->filename
+    // if is-list is 1 then it will just update chunknode->chunkname and chunknode->filename    
+    char cpy_fn[] = *filenode->filename;
+    char * temp = strtok_r(cpy_fn, "/.", &cpy_fn);
+    while(temp != NULL){
+        // first parse msg
+        temp = strtok_r(cpy_fn, ".", &cpy_fn);
+        temp = strtok_r(cpy_fn, ".", &cpy_fn);
+        temp = strtok_r(cpy_fn, ".", &cpy_fn);
+        if(temp == NULL){
+            printf("parsed past period - line 218 clienthelper\n");
+        }
+        printf("Extracted chunk number: %s\n", temp);
+    }
+    int num = atoi(temp);
+
+    // create new node and add to chunk linkedlist
+    struct chunk_node * new_node = calloc(1, sizeof(struct chunk_node));
+    new_node->this_file = filenode;
+    new_node->chunknum = num;
+    new_node->next = NULL;
+    new_node->msg = NULL;
+
+    if(filenode->head == NULL){
+        filenode->head = new_node;
+        return;
+    }
+    struct chunk_node * chucrawl = filenode->head;
+    while(chucrawl->next != NULL){
+        chucrawl=chucrawl->next;
+    }
+    chucrawl->next = new_node;
+  
+    if(is_list == 1){
+        return;
+    }
 
     // if islist is 0 then it will update chunknode->chunk
+    new_node->msg = chunk_msg;
+
     return;
 }
 

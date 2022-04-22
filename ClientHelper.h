@@ -22,7 +22,7 @@ struct thread_message {
 struct file_node {
     char * filename;
     struct file_node * next;
-    struct chunk * head;
+    struct chunk_node * head;
     int is_complete; // 1 if file is complete, otherwise 0
 };
 
@@ -41,7 +41,7 @@ void insert_file_and_chunk_node(char * fn, struct thread_message *thread_node, i
 void add_chunk(struct file_node *filenode, char * chunk_msg, int is_list);  // TODO
 void create_linked_list();
 void delete_linked_list();
-void thread(void * argument);   // TODO
+void thread(void * argument);   
 void create_msg(char *cmd, char *fn, char *subfolder, char *buf);   // TODO
 void delete(struct client_info *info);
 int open_sendfd(char *ip, int port);

@@ -85,30 +85,40 @@ void do_list(struct client_info *info, char * subfolder, char * buf){
 
 void thread(void * argument) 
 {  
-    /*
-        - TODO
-        - 
-    */
     struct arg_struct *args = argument;
 
     int connfd = args->connfdp;
+    int server_num = args->server_num;
+    struct client_info *info = args->info;
+
     pthread_detach(pthread_self()); 
-    //free(argument);
 
-    while(1){
-        // first read socket
-        // read login
-        size_t n; 
-        char buf[MAXBUF]; 
-        bzero(buf, MAXBUF);
+    // send message
+    write(connfd, info->msg, strlen(info->msg));
 
-        n = read(connfd, buf, MAXBUF); 
-        if(n < 0){
-            return;
-        }
-        //parse_and_execute(buf, connfd);
+    // receive msg
+    char buf[MAXBUF]; 
+    bzero(buf, MAXBUF);
+
+    size_t n = read(connfd, buf, MAXBUF); 
+    if(n < 0){
+        return;
     }
 
+    // save the received message in a linked list node
+    if(thread_head == NULL){
+        printf("Error = thread message/ head of LL is null\n");
+        return;
+    }
+    struct thread_message * crawl = thread_head;
+    while(crawl != NULL){
+        if(crawl->server_num == server_num){
+            crawl->msg = calloc(1, strlen(buf));
+            strcpy(crawl->msg, buf);
+            break;
+        }
+        crawl = crawl->next;
+    }
 
     close(connfd);
     free(args->connfdp);
@@ -123,9 +133,6 @@ int open_sendfd(char *ip, int port){
     /* Create a socket descriptor */
     if ((serverfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
         return -1;
-
-    // printf("ip: %s\n", ip);
-    // printf("port: %d\n", port);
 
     bzero((char *) &serveraddr, sizeof(serveraddr));
     serveraddr.sin_addr.s_addr = inet_addr("127.0.0.1");    // TODO: figure this out

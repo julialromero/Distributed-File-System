@@ -26,50 +26,54 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: %s <port>\n", argv[0]);
         exit(0);
     }
-    config_path = argv[1];
+    bzero(config_path, LISTENQ);
+    strcpy(config_path, argv[1]);
+    //printf("Config file: %s\n", config_path);
 
-    struct client_info info;
-
-    display_and_handle_menu(&info);
-    delete(&info);
+    display_and_handle_menu();
 }
 
-void do_list(struct client_info *info, char * subfolder, char * buf){
+void do_list(struct cmdlineinfo cmdline){
     // create message linked list
     create_linked_list();
 
     // create socket and connect to servers
-    parse_config_and_connect(&info, config_path);
+    parse_config_and_connect(cmdline);
 
     // parse message linked list and populate file and chunk linked lists
     struct thread_message * crawl = thread_head;
-    char buf[MAXBUF];
-    bzero(buf, MAXBUF);
+    char * buf;
+    if(crawl == NULL){
+        printf("Failed to create thread ll?\n");
+    }
     while(crawl != NULL){
         if(crawl->msg == NULL){
             crawl = crawl->next;
             continue;
         }
+        
+        //printf("Message found in LL: %d\n", crawl->server_num);
 
-        strcpy(buf, crawl->msg);
+        buf = strdup(crawl->msg);
         char * temp = strtok_r(buf, "\n", &buf);
         while(temp != NULL){
             insert_file_and_chunk_node(temp, crawl, 1);
             temp = strtok_r(buf, "\n", &buf);
         }
-        bzero(buf, MAXBUF);
+        crawl = crawl->next;
     }
+
+    compute_if_files_are_complete();
 
     // iterate through file linked list and display list to user
     struct file_node * fcrawl = file_head;
     if(file_head == NULL){
-        printf("Empty directory\n");
+        printf("PROGRAM: Empty directory\n");
         return;
     }
-    compute_if_files_are_complete();
 
     fcrawl = file_head;
-    printf("---Listing files---\n");
+    printf("\n---Listing files---\n");
     while(fcrawl != NULL){
         printf("%s", fcrawl->filename);
         if(fcrawl->is_complete != 1)
@@ -77,53 +81,72 @@ void do_list(struct client_info *info, char * subfolder, char * buf){
             printf(" [incomplete]");
         }        
         printf("\n");
+        fcrawl = fcrawl->next;
     }
 
     // delete message linked list
-    delete_linked_list;
+    delete();
+
 }
 
-void thread(void * argument) 
+void * thread(void * argument) 
 {  
-    struct arg_struct *args = argument;
+    struct arg_struct args = *(struct arg_struct*) argument;
+    //struct arg_struct *args = argument;
+    int connfd = args.connfdp;
+    //printf("\n\n\nconfdf: %d\n", connfd);
+    int server_num = args.server_num;
+    printf("THREAD - Connected to Server %d\n", server_num);
+    char msg[MAXBUF];
+    bzero(msg, MAXBUF);
+    strcpy(msg, args.msg);
 
-    int connfd = args->connfdp;
-    int server_num = args->server_num;
-    struct client_info *info = args->info;
+    //pthread_detach(pthread_self()); 
 
-    pthread_detach(pthread_self()); 
-
-    // send message
-    write(connfd, info->msg, strlen(info->msg));
+    write(connfd, msg, strlen(msg));
 
     // receive msg
     char buf[MAXBUF]; 
     bzero(buf, MAXBUF);
 
-    size_t n = read(connfd, buf, MAXBUF); 
-    if(n < 0){
-        return;
+    size_t n;
+    char *cache_buf = calloc(MAXFILEBUF,1);
+    int size = 0;
+    while((n = read(connfd, buf, MAXBUF)) > 0){
+        // make sure allocated memory is large enough
+        if((cache_buf = realloc(cache_buf, size + n * sizeof(char))) == NULL){
+            pthread_exit(NULL);
+            return NULL;
+        }
+        memcpy(cache_buf + size, buf, n);
+        size+=n;   
     }
+
+    // printf("Bytes received: %d\n\n", size);
+    // printf("------Received----\n%s\n", cache_buf);
 
     // save the received message in a linked list node
     if(thread_head == NULL){
-        printf("Error = thread message/ head of LL is null\n");
-        return;
+        printf("THREAD - Error = thread message/ head of LL is null\n");
+        pthread_exit(NULL);
+        return NULL;
     }
     struct thread_message * crawl = thread_head;
     while(crawl != NULL){
+        //printf("THREAD - crawl server num: %d\n", crawl->server_num);
         if(crawl->server_num == server_num){
-            crawl->msg = calloc(1, strlen(buf));
-            strcpy(crawl->msg, buf);
+            crawl->msg = calloc(1, strlen(cache_buf));
+            strcpy(crawl->msg, cache_buf);
+            //printf("THREAD - Message recieved and stored.\n\n");
             break;
         }
         crawl = crawl->next;
     }
-
+    free(cache_buf);
     close(connfd);
-    free(args->connfdp);
-    printf("Connection closed.\n\n");
-    return;
+    //printf("THREAD - Connection closed\n");
+    pthread_exit(NULL);
+    return NULL;
 }
 
 int open_sendfd(char *ip, int port){
@@ -147,16 +170,16 @@ int open_sendfd(char *ip, int port){
     else{
         serveraddr.sin_port = htons(990);
     }
+    //printf("%d\n", port);
 
     // establish connection
     int sockid = connect(serverfd, (struct sockaddr*)&serveraddr, sizeof(serveraddr));
     if (sockid < 0){
-        perror("Error: ");
-        printf("Connection failed\n");
+        //perror("Error: ");
 		return -1;
 	}
 
-    printf("Socket connected\n");
+    // printf("Socket connected\n");
 
     return serverfd;
 }

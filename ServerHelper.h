@@ -9,10 +9,12 @@ struct msg_info {
     char * file;
     char * optional_subfolder;
     char * chunk;
+    char * server_dir;
 };
 
+void listFilesRecursively(char *basePath, int connfd);
 void parse_header(char * request_msg, struct msg_info *info);
-void thread(void * argument);
+void * thread(void * argument);
 void parse_and_execute(char * buf, int connfd); // TODO: finish up
 int authenticate_and_create_directory(int connfd, struct msg_info *info);
 int check_if_valid_login(struct msg_info *info); // TODO

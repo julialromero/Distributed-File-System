@@ -56,13 +56,15 @@ void parse_header(char * request_msg, struct msg_info *info){
     
     char * pass = strtok_r(request_msg, "\r\n", &request_msg); 
     pass = strdup(pass);
+
+    char * dir = strtok_r(request_msg, "\r\n", &request_msg); 
+    dir = strdup(dir);
     
     char * cmdline = strtok_r(request_msg, "\r\n", &request_msg);
     cmdline = strdup(cmdline);
 
     char * cmd = strtok_r(cmdline, " ", &cmdline);
     cmd = strdup(cmd);
-
 
     char * filepath, * optional, * chunk;
     if(strcasecmp("LIST", cmd) == 0){
@@ -71,6 +73,7 @@ void parse_header(char * request_msg, struct msg_info *info){
         if(optional != NULL){
             optional = strdup(optional);
         }
+        // printf("----Parse header----\n");
         // printf("user: %s\n", user);
         // printf("pass: %s\n", pass);
         // printf("cmd: %s\n", cmd);
@@ -101,6 +104,7 @@ void parse_header(char * request_msg, struct msg_info *info){
        
     }
     
+    info->server_dir = dir;
     info->user = user;
     info->pass = pass;
     info->cmd = cmd;
@@ -175,5 +179,38 @@ int get_file(FILE * fp, char * buf, int connfd, int i)
     return 1;
 }
 
+void listFilesRecursively(char *basePath, int connfd)
+{
+    char path[1000];
+    struct dirent *dp;
+    DIR *dir = opendir(basePath);
+    char buf[1002];
+
+    // Unable to open directory stream
+    if (!dir)
+        return;
+
+    while ((dp = readdir(dir)) != NULL)
+    {
+        if (strcmp(dp->d_name, ".") != 0 && strcmp(dp->d_name, "..") != 0)
+        {
+            bzero(buf, 1002);
+            strcpy(buf, dp->d_name);
+            strcat(buf, "\n");
+            printf("%s\n", dp->d_name);
+
+            write(connfd, buf, strlen(buf));
+
+            // Construct new path from our base path
+            strcpy(path, basePath);
+            strcat(path, "/");
+            strcat(path, dp->d_name);
+
+            listFilesRecursively(path, connfd);
+        }
+    }
+
+    closedir(dir);
+}
 
 // "USER1\r\nPASS1\r\nPUT 1.txt chunk# optional"

@@ -12,9 +12,9 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <dirent.h>
 
 #include "ServerHelper.h"
-#include "ClientHelper.h"
 
 #define MAXLINE  8192  /* max text line length */
 #define MAXBUF   8192  /* max I/O buffer size */
@@ -41,8 +41,10 @@ int main(int argc, char **argv)
     }
     port = atoi(argv[1]);
     
-
     listenfd = open_listenfd(port);
+    if(listenfd < 0){
+        printf("listen unsuccessful\n");
+    }
     printf("port: %d\n", port);
     while (1) {
         connfdp = malloc(sizeof(int));
@@ -54,34 +56,46 @@ int main(int argc, char **argv)
 }
 
 /* thread routine */
-void thread(void * argument) 
+void * thread(void * argument) 
 {  
-    printf("Connected\n");
+    //printf("Connected\n");
     struct arg_struct *args = argument;
 
     int connfd = args->arg1;
     pthread_detach(pthread_self()); 
     //free(argument);
 
+    int i = 0;
     while(1){
         // first read socket
-        // read login
-        size_t n; 
+        int n; 
         char buf[MAXBUF]; 
         bzero(buf, MAXBUF);
 
         n = read(connfd, buf, MAXBUF); 
         if(n < 0){
-            return;
+            
+            return NULL;
         }
-        printf("Num bytes; %d\n", n);
-        printf("RECEIVED: %s\n", buf);
+        if(n == 0){
+            // timeout after not recieving anything
+            if(i >= 20){
+                printf("Socket closed\n");
+                break;
+            }
+            i++;
+            sleep(1);
+            continue;
+        }
+        printf("Num bytes: %d\n", n);
+        //printf("RECEIVED: %s\n", buf);
         parse_and_execute(buf, connfd);
+        return NULL;
     }
 
-    close(connfd);
-    printf("Connection closed.\n\n");
-    return;
+    
+    // printf("Connection closed.\n\n");
+    return NULL;
 }
 
 void parse_and_execute(char * buf, int connfd){
@@ -105,11 +119,50 @@ void parse_and_execute(char * buf, int connfd){
     // }
     if(strcasecmp("LIST", info.cmd) == 0){
         // send back a list all files
-        printf("Listing\n");
+        char path[LISTENQ];
+        strcpy(path, "./");
+        strcat(path, info.server_dir);
+        strcat(path, "/");
+        strcat(path, info.user);
+        strcat(path, "/");
 
+        listFilesRecursively(path, connfd);
+        // create function for this
+        // DIR *d;
+        // struct dirent *dir;
+        // d = opendir(buf);
+        // char buf[MAXBUF];
+        // bzero(buf, MAXBUF);
+        // if (d) {
+        //     //strcpy(buf, "Listing directory:"); 
+        //     int buffer_size_free;
+        //     while ((dir = readdir(d)) != NULL) {
+                
+
+
+        //         buffer_size_free = MAXBUF - strlen(buf);
+        //         int namelength = strlen(dir->d_name);
+            
+        //         // check if buffer has capacity for next filename
+        //         if(buffer_size_free <= namelength + 1){
+        //             write(connfd, buf, strlen(buf));
+        //             bzero(buf, MAXBUF);
+        //         }
+        //         strcat(buf, "\n");
+        //         strcat(buf, dir->d_name);
+        //     }
+        //     closedir(d);
+        //     write(connfd, buf, strlen(buf));
+
+        //     bzero(buf, MAXBUF);
+        // } 
+        // else{
+        //     char msg[] = "Could not open directory.";
+        //     write(connfd, msg, strlen(msg));
+        // }
     }
-
-    delete_struct(&info);
+    close(connfd);
+    printf("Done sending\n");
     return;
 }
 
@@ -125,9 +178,14 @@ int authenticate_and_create_directory(int connfd, struct msg_info *info){
     }
 
     // check if directory exists, if not then create
-    int i = check_if_directory_exists(info->user);
+    char path[LISTENQ];
+    strcpy(path, info->server_dir);
+    strcat(path, "/");
+    strcat(path, info->user);
+    int i = check_if_directory_exists(path);
     if (i != 1){
-        mkdir(info->user, 0777);
+        printf("making dir: %s\n", path);
+        mkdir(path, 0777);
     }
 
     return 1;

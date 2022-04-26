@@ -23,10 +23,6 @@
 
 int mkdir(const char *pathname, mode_t mode);
 
-struct arg_struct {
-    int arg1;
-};
-
 // listen on socket and 
 int main(int argc, char **argv) 
 {
@@ -63,7 +59,6 @@ void * thread(void * argument)
 
     int connfd = args->arg1;
     pthread_detach(pthread_self()); 
-    //free(argument);
 
     int i = 0;
     while(1){
@@ -88,12 +83,11 @@ void * thread(void * argument)
             continue;
         }
         printf("Num bytes: %d\n", n);
-        //printf("RECEIVED: %s\n", buf);
+        printf("RECEIVED: %s\n", buf);
         parse_and_execute(buf, connfd);
         return NULL;
     }
 
-    
     // printf("Connection closed.\n\n");
     return NULL;
 }
@@ -108,15 +102,24 @@ void parse_and_execute(char * buf, int connfd){
     if(booll != 1){
         return;
     }
+    
+    if(strcasecmp("PUT", info.cmd) == 0){
+        printf("put\n");
+        receive_file(connfd, &info);
 
-    // if(strcasecmp("PUT", info->cmd){
-    //     receive_file(connfd, &info);
-    // }
+        // send confirmation
+        char msg[MAXBUF];
+        bzero(msg, MAXBUF);
+        sprintf(msg, "File stored in server directory: %s", info.server_dir);
+        //strcpy(msg, "File stored in server directory: %s", info.server_dir);
+        write(connfd, msg, strlen(msg));
+    }
 
     // if(strcasecmp("GET", info->cmd){
     //     // get all files with prefix info->file and send them back
     //     continue;
     // }
+
     if(strcasecmp("LIST", info.cmd) == 0){
         // send back a list all files
         char path[LISTENQ];
@@ -127,107 +130,9 @@ void parse_and_execute(char * buf, int connfd){
         strcat(path, "/");
 
         listFilesRecursively(path, connfd);
-        // create function for this
-        // DIR *d;
-        // struct dirent *dir;
-        // d = opendir(buf);
-        // char buf[MAXBUF];
-        // bzero(buf, MAXBUF);
-        // if (d) {
-        //     //strcpy(buf, "Listing directory:"); 
-        //     int buffer_size_free;
-        //     while ((dir = readdir(d)) != NULL) {
-                
-
-
-        //         buffer_size_free = MAXBUF - strlen(buf);
-        //         int namelength = strlen(dir->d_name);
-            
-        //         // check if buffer has capacity for next filename
-        //         if(buffer_size_free <= namelength + 1){
-        //             write(connfd, buf, strlen(buf));
-        //             bzero(buf, MAXBUF);
-        //         }
-        //         strcat(buf, "\n");
-        //         strcat(buf, dir->d_name);
-        //     }
-        //     closedir(d);
-        //     write(connfd, buf, strlen(buf));
-
-        //     bzero(buf, MAXBUF);
-        // } 
-        // else{
-        //     char msg[] = "Could not open directory.";
-        //     write(connfd, msg, strlen(msg));
-        // }
+       
     }
     close(connfd);
     printf("Done sending\n");
     return;
 }
-
-int authenticate_and_create_directory(int connfd, struct msg_info *info){
-    // check if login is valid
-    int booll = check_if_valid_login(info);
-    if(booll != 1){
-        char buf[LISTENQ];
-        bzero(buf, LISTENQ);
-        strcpy(buf, "Invalid Username/Password. Please try again.");  
-        write(connfd, buf, strlen(buf));
-        return 0;
-    }
-
-    // check if directory exists, if not then create
-    char path[LISTENQ];
-    strcpy(path, info->server_dir);
-    strcat(path, "/");
-    strcat(path, info->user);
-    int i = check_if_directory_exists(path);
-    if (i != 1){
-        printf("making dir: %s\n", path);
-        mkdir(path, 0777);
-    }
-
-    return 1;
-}
-
-int check_if_valid_login(struct msg_info *info){
-    // function to read dfs.conf and search for matching username password
-    // returns 1 if valid, 0 if not
- 
-    return 1;
-}
-
-/* 
- * open_listenfd - open and return a listening socket on port
- * Returns -1 in case of failure 
- */
-int open_listenfd(int port) 
-{
-    int listenfd, optval=1;
-    struct sockaddr_in serveraddr;
-  
-    /* Create a socket descriptor */
-    if ((listenfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-        return -1;
-
-    /* Eliminates "Address already in use" error from bind. */
-    if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, 
-                   (const void *)&optval , sizeof(int)) < 0)
-        return -1;
-
-    /* listenfd will be an endpoint for all requests to port
-       on any IP address for this host */
-    bzero((char *) &serveraddr, sizeof(serveraddr));
-    serveraddr.sin_family = AF_INET; 
-    serveraddr.sin_addr.s_addr = htonl(INADDR_ANY); 
-    serveraddr.sin_port = htons((unsigned short)port); 
-    if (bind(listenfd, (struct sockaddr*)&serveraddr, sizeof(serveraddr)) < 0)
-        return -1;
-
-    /* Make it a listening socket ready to accept connection requests */
-    if (listen(listenfd, LISTENQ) < 0)
-        return -1;
-
-    return listenfd;
-} /* end open_listenfd */

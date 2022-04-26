@@ -12,10 +12,14 @@ struct msg_info {
     char * server_dir;
 };
 
+struct arg_struct {
+    int arg1;
+};
+
 void listFilesRecursively(char *basePath, int connfd);
 void parse_header(char * request_msg, struct msg_info *info);
 void * thread(void * argument);
-void parse_and_execute(char * buf, int connfd); // TODO: finish up
+void parse_and_execute(char * buf, int connfd); 
 int authenticate_and_create_directory(int connfd, struct msg_info *info);
 int check_if_valid_login(struct msg_info *info); // TODO
 int open_listenfd(int port);

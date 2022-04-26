@@ -10,33 +10,91 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <ctype.h>
 
 #include "ClientHelper.h"
 
 #define MAXBUF   8192 
 #define LISTENQ  1024
 
-/*
-    TODO for list:
-    - send list command to all four ips
-    - 
-    - check if all 4 chunks are received
-    - if not then concat [incomplete] to end of ls
-*/
 
+void display_and_handle_menu(){
+    char buf[MAXBUF];
+    char * copy, *cmd, *fn, *subfolder;
+    while(1){
+        /* get a message from the user */
+        printf("\nPROGRAM: Enter one of the following commands:\n");
+        printf("list\nget [filename]\nput [filename]\n\n");
+        bzero(buf, MAXBUF);
+        fgets(buf, MAXBUF, stdin);
 
-void create_msg(struct client_info *info, char * temp, struct cmdlineinfo args){
-    // TODO: concat message in format:
+        // Split the message on space
+        copy = strdup(buf);
+        cmd = strdup(strtok_r(copy, " ", &copy));
+        fn = strtok_r(copy, " ", &copy);
+        if(fn != NULL){
+            fn = strdup(fn);
+            subfolder = strtok_r(copy, " ", &copy);
+            if(subfolder != NULL){
+                subfolder =  strdup(subfolder);
+                subfolder[strlen(subfolder) - 1]='\0';
+            }
+            else{
+                fn[strlen(fn) - 1]='\0';
+            }
+        }
+        else{
+            cmd[strlen(cmd) - 1]='\0';
+        }
+
+        // populate struct with commandline input
+        struct cmdlineinfo cmdline;
+        cmdline.cmd = cmd;
+        cmdline.fn = fn;
+        cmdline.subfolder = subfolder;
+
+        if(cmdline.fn != NULL){
+            printf("fn--%s--\n", cmdline.fn);
+        }
+
+        // call subroutines based on entered command
+        if(strcasecmp("list", cmdline.cmd) == 0){
+            // printf("Going to tolist()\n");
+            do_list(cmdline);
+        }
+
+        if(strcasecmp("get", cmdline.cmd) == 0){}
+
+        if(strcasecmp("put", cmdline.cmd) == 0){
+            do_put(cmdline);
+        }
+    }
+}
+
+void create_msg(struct client_info *info, char * dir, struct cmdlineinfo args){
     /*
-        LIST: user\r\npass\r\ncmd <subfolder>
-        GET/PUT: user\r\npass\r\ncmd filepath <subfolder>
+        Here is the header formatting for each command --
+        LIST: "user\r\npass\r\ndir\r\ncmd <subfolder>"
+        GET/PUT: "user\r\npass\r\ndir\r\ncmd filepath <subfolder>"
     */
-   char * str =  "Alice\r\nSimplePassword\r\n";
+    //char * str =  "Alice\r\nSimplePassword\r\n";
+
    char msg[LISTENQ];
-   strcpy(msg, str);
-   strcat(msg, temp);
+   strcpy(msg, info->user);
    strcat(msg, "\r\n");
-   strcat(msg, "list");
+   strcat(msg, info->pass);
+   strcat(msg, "\r\n");
+   strcat(msg, dir);
+   strcat(msg, "\r\n");
+   strcat(msg, args.cmd);
+
+   if(strcasecmp(args.cmd, "LIST") == 0){
+       info->msg = strdup(msg);
+       return;
+   }
+
+   strcat(msg, " ");
+   strcat(msg, args.fn);
 
     // printf("DEBUG: msg created: \n%s\n", msg);
    info->msg = strdup(msg);
@@ -82,6 +140,8 @@ void parse_config_and_connect(struct cmdlineinfo args){
             break;
         }
         temp = strtok_r(buf, " ", &buf);    //server directory name
+        printf("fn:\n");
+        printf("%s\n", args.fn);
         create_msg(&info, temp, args);
 
         ip = strtok_r(buf, ":", &buf);
@@ -92,17 +152,18 @@ void parse_config_and_connect(struct cmdlineinfo args){
         portint = atoi(port);
 
         count++;
-        connect_to_server(&info, ip, portint, count, &tid);
+        connect_to_server(&info, ip, portint, count, &tid, args);
     }
 
     // collect all threads / server responses
+    printf("waiting for threads to term\n");
     for (int i = 0; i < 4; i++)
        pthread_join(tid[i], NULL);
 
     return;
 }
 
-void connect_to_server(struct client_info *info, char * ip, int port, int count, pthread_t tid[4]){
+void connect_to_server(struct client_info *info, char * ip, int port, int count, pthread_t tid[4], struct cmdlineinfo cmdinfo){
     // ----- open socket and spawn thread for each server ----- //
     int i, serverfd;
     int  *connfdp, clientlen=sizeof(struct sockaddr_in);
@@ -123,73 +184,13 @@ void connect_to_server(struct client_info *info, char * ip, int port, int count,
     strcpy(buf, info->msg);
 
     arg.msg = strdup(buf);
+    arg.cmd = strdup(cmdinfo.cmd);
 
     pthread_create(&tid[count-1], NULL, thread, (void *)&arg);
 
     return;
 }
 
-void display_and_handle_menu(){
-    char buf[MAXBUF];
-    char * copy, *cmd, *fn, *subfolder;
-    while(1){
-        /* get a message from the user */
-        printf("\nPROGRAM: Enter one of the following commands:\n");
-        printf("list\nget [filename]\nput [filename]\n\n");
-        bzero(buf, MAXBUF);
-        fgets(buf, MAXBUF, stdin);
-
-        // Split the message on space
-        copy = strdup(buf);
-        cmd = strdup(strtok_r(copy, " ", &copy));
-        fn = strtok_r(copy, " ", &copy);
-        if(fn != NULL){
-            fn = strdup(fn);
-            subfolder = strtok_r(copy, " ", &copy);
-            if(subfolder != NULL){
-                subfolder =  strdup(subfolder);
-                subfolder[strlen(subfolder) - 1]='\0';
-            }
-            else{
-                fn[strlen(fn) - 1]='\0';
-            }
-        }
-        else{
-            cmd[strlen(cmd) - 1]='\0';
-        }
-
-        // populate struct with commandline input
-        struct cmdlineinfo cmdline;
-        cmdline.cmd = cmd;
-        cmdline.fn = fn;
-        cmdline.subfolder = subfolder;
-
-        if(cmdline.fn != NULL){
-            printf("fn: %s\n", cmdline.fn);
-        }
-        printf("cmd:--%s--\n", cmdline.cmd);   
-
-        // call subroutines based on entered command
-        if(strcasecmp("list", cmdline.cmd) == 0){
-            // printf("Going to tolist()\n");
-            do_list(cmdline);
-        }
-
-        if(strcasecmp("get", cmdline.cmd) == 0){}
-
-        if(strcasecmp("put", cmdline.cmd) == 0){}
-
-        // // free memory
-        // free(cmd);
-        // free(copy);
-        // if(fn != NULL){
-        //     free(fn);
-        //     if(subfolder != NULL){
-        //         free(subfolder);
-        //     }
-        // }
-    }
-}
 
 int split_fn_and_chunk(char * fn){
     int len = strlen(fn);
@@ -309,6 +310,7 @@ void create_linked_list(){
         node->server_num = 4-i;
         thread_head = node;
         thread_head->msg = NULL;
+        thread_head->connfd = -1;
     }
     return;
 }
@@ -341,4 +343,115 @@ void delete(){
 
 
     return;
+}
+
+//--------------PUT HELPER FUNCS--------------//
+
+// Run system call for md5. Adapted for MacOS.
+int md5sum(char *file_name)
+{
+    char buf[MAXBUF];
+    bzero(buf, MAXBUF);
+
+    int length = strlen("md5") + strlen(file_name) + 2;
+    char *sys_command = (char*)malloc((length * sizeof(char)) + 1 );
+
+    snprintf(sys_command, length, "%s %s", "md5",file_name);
+
+    system(sys_command );
+
+    //printf( "attempting to popen %s \n", full_command );
+    FILE *md5 = popen(sys_command, "r" );
+
+    while( fgets(buf, sizeof(buf), md5 ) != 0 );
+
+    pclose( md5 );
+
+    int i, k, sum = 0;
+    for(i=0; i < strlen(buf); i++){
+        k = buf[i] - '0';
+        sum += k;
+    }    
+
+    printf("MD5SUM: %d\n", sum);
+
+    return sum;
+}
+
+int get_file_length(FILE * fp){
+    // get size of file
+    fseek(fp, 0L, SEEK_END);
+    int res = ftell(fp);
+
+    fseek(fp, 0L, SEEK_SET);
+    return res;
+}
+
+int pick_delegation_scheme(int x){
+     // server delegation scheme based on x
+    if(x == 0){
+        return 1; // { {1, 2}, {2, 3}, {3, 4}, {4, 1}};
+    }
+    else if(x == 1){
+        return 4; //{{4, 1}, {1, 2}, {2, 3}, {3, 4}};
+    }
+    else if(x == 2){
+        return 3; //{{3, 4}, {4, 1}, {1, 2}, {2, 3}};
+    }
+    else if(x == 3){
+        return 2; //{{2, 3}, {3, 4}, {4, 1}, {1, 2}};
+    }
+    return 1;
+}
+
+void separate_file_to_chunks_and_store(int floor, FILE * fp, int x){
+    // read each chunk into file buf
+    char file[MAXBUF];
+    bzero(file, MAXBUF);
+    fseek(fp, 0L, SEEK_SET);
+    size_t num_bytes;
+    int pos = 0;
+
+    int server_num = pick_delegation_scheme(x);
+
+    int i;
+    for(i = 0; i < 3; i++){
+        num_bytes = fread(file, 1, floor, fp);
+        pos += (int)num_bytes;
+        fseek(fp, pos, SEEK_SET);
+
+        //printf("Delegating to server %d\n", server_num);
+        delegate_chunk_to_server(&server_num, file, i); 
+        //server_num = server_num +1 % 4;
+        bzero(file, MAXBUF);
+    }
+    num_bytes = fread(file, 1, floor + 6, fp);  // this will read to the end of the file since the remainder < 4
+
+}
+
+// this function stores the chunk with the corresponding server node based on x, the MD5SUM
+void delegate_chunk_to_server(int * server_num, char * file, int chunk_num){
+    // for each assigned server
+    int i;
+    for(i = 0; i < 2; i++){
+        struct thread_message * crawl = thread_head;
+        while(crawl != NULL){
+            // if this node is the assigned server than add
+            if(crawl->server_num - 1 == *server_num){
+                char * this_send_chunk = calloc(1, strlen(file) + 1);
+                char intconv[5];
+                sprintf(intconv, "%d", chunk_num);
+                strcpy(this_send_chunk, intconv);
+                strcat(this_send_chunk, file);
+                crawl->send_chunks[i] = this_send_chunk;
+                //printf("Inserted to server num %d\n", crawl->server_num);
+                //printf("Inserted: %s\n", crawl->send_chunks[i]);
+            }
+            crawl = crawl->next;
+        }
+        if(i == 0){
+            *server_num = (*server_num + 1) % 4; // bound betweeen 1 to 4
+        }
+    }
+    
 }

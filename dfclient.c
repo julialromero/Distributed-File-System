@@ -10,6 +10,7 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <ctype.h>
 
 #include "ClientHelper.h"
 
@@ -17,7 +18,7 @@
 #define MAXBUF   8192  /* max I/O buffer size */
 #define LISTENQ  1024  /* second argument to listen() */
 #define MAXFILEBUF 60000
-
+#define MD5_LEN 32
 
 
 int main(int argc, char **argv) 
@@ -51,7 +52,6 @@ void do_list(struct cmdlineinfo cmdline){
             crawl = crawl->next;
             continue;
         }
-        
         //printf("Message found in LL: %d\n", crawl->server_num);
 
         buf = strdup(crawl->msg);
@@ -89,21 +89,92 @@ void do_list(struct cmdlineinfo cmdline){
 
 }
 
+void do_put(struct cmdlineinfo cmdline){
+    // create message linked list
+    create_linked_list();
+
+    int sum = md5sum(cmdline.fn);
+    if (sum < 0) {
+        puts("Error occurred!");
+    } 
+
+    int x = sum % 4;
+    printf("x value is %d\n", x);
+
+    // calculate length of the 4 chunks
+    FILE * fp = fopen(cmdline.fn, "rb");
+    int len = get_file_length(fp);
+    int floor = (int)len / 4;
+
+    // separate file into chunks and store in linkedlist node corresponding to destination server
+    separate_file_to_chunks_and_store(floor, fp, x);
+
+    // finally, connect to servers
+    parse_config_and_connect(cmdline);
+
+    // iterate thru connectiuons
+    struct thread_message *crawl = thread_head;
+    int connfd;
+    while(crawl != NULL){
+        connfd = crawl->connfd;
+        if(connfd < 0){     // if we did not connect to this server 
+            crawl = crawl->next;
+            continue;
+        }
+        printf("connfd: %d\n", connfd);
+        char to_send[MAXBUF];
+        //strcpy(to_send, chunk)
+        strcpy(to_send, crawl->send_chunks[0]);
+        //printf("to send: %s\n", to_send);
+        write(connfd, to_send, strlen(to_send));
+        crawl = crawl->next;
+    }
+    // close_connections(); // TODO - close all connections
+}
+
+
 void * thread(void * argument) 
 {  
+    /* 
+        Copy over arguments
+    */
     struct arg_struct args = *(struct arg_struct*) argument;
-    //struct arg_struct *args = argument;
     int connfd = args.connfdp;
-    //printf("\n\n\nconfdf: %d\n", connfd);
     int server_num = args.server_num;
-    printf("THREAD - Connected to Server %d\n", server_num);
+    //char * cmd = args.cmd;
+    
     char msg[MAXBUF];
     bzero(msg, MAXBUF);
     strcpy(msg, args.msg);
 
-    //pthread_detach(pthread_self()); 
+    char cmd[MAXBUF];
+    bzero(cmd, MAXBUF);
+    strcpy(cmd, args.cmd);
+
+    printf("THREAD - Connected to Server %d\n", server_num);
 
     write(connfd, msg, strlen(msg));
+
+    // TODO clean this up
+    if(strcasecmp("PUT", cmd) == 0){
+        // save the received message in the linked list node dedicated to this thread
+        if(thread_head == NULL){
+            printf("THREAD - Error = thread message/ head of LL is null\n");
+            pthread_exit(NULL);
+            return NULL;
+        }
+        struct thread_message * crawl = thread_head;
+        while(crawl != NULL){
+            if(crawl->server_num == server_num){
+                // store connection id in dedicated node
+                crawl->connfd = connfd;
+                break;
+            }
+            crawl = crawl->next;
+        }
+        pthread_exit(NULL);
+        return NULL;
+    }
 
     // receive msg
     char buf[MAXBUF]; 
@@ -122,10 +193,10 @@ void * thread(void * argument)
         size+=n;   
     }
 
-    // printf("Bytes received: %d\n\n", size);
+    printf("Bytes received: %d\n\n", size);
     // printf("------Received----\n%s\n", cache_buf);
 
-    // save the received message in a linked list node
+    // save the received message in the linked list node dedicated to this thread
     if(thread_head == NULL){
         printf("THREAD - Error = thread message/ head of LL is null\n");
         pthread_exit(NULL);
@@ -133,18 +204,21 @@ void * thread(void * argument)
     }
     struct thread_message * crawl = thread_head;
     while(crawl != NULL){
-        //printf("THREAD - crawl server num: %d\n", crawl->server_num);
         if(crawl->server_num == server_num){
+            // store message in dedicated node
             crawl->msg = calloc(1, strlen(cache_buf));
             strcpy(crawl->msg, cache_buf);
-            //printf("THREAD - Message recieved and stored.\n\n");
+
+            // store connection id in dedicated node
+            crawl->connfd = connfd;
+
             break;
         }
         crawl = crawl->next;
     }
     free(cache_buf);
-    close(connfd);
-    //printf("THREAD - Connection closed\n");
+    //close(connfd);
+    printf("THREAD - Connection closed\n");
     pthread_exit(NULL);
     return NULL;
 }
@@ -159,8 +233,7 @@ int open_sendfd(char *ip, int port){
 
     bzero((char *) &serveraddr, sizeof(serveraddr));
     serveraddr.sin_addr.s_addr = inet_addr("127.0.0.1");    // TODO: figure this out
-    //bcopy((char *)ip, (char *)&serveraddr.sin_addr.s_addr, strlen(ip));
-
+  
     // construct server struct
     serveraddr.sin_family = AF_INET;  
      
@@ -170,7 +243,6 @@ int open_sendfd(char *ip, int port){
     else{
         serveraddr.sin_port = htons(990);
     }
-    //printf("%d\n", port);
 
     // establish connection
     int sockid = connect(serverfd, (struct sockaddr*)&serveraddr, sizeof(serveraddr));
@@ -178,9 +250,6 @@ int open_sendfd(char *ip, int port){
         //perror("Error: ");
 		return -1;
 	}
-
-    // printf("Socket connected\n");
-
     return serverfd;
 }
 

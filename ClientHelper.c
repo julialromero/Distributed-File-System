@@ -140,8 +140,8 @@ void parse_config_and_connect(struct cmdlineinfo args){
             break;
         }
         temp = strtok_r(buf, " ", &buf);    //server directory name
-        printf("fn:\n");
-        printf("%s\n", args.fn);
+        // printf("fn:\n");
+        // printf("%s\n", args.fn);
         create_msg(&info, temp, args);
 
         ip = strtok_r(buf, ":", &buf);
@@ -156,7 +156,6 @@ void parse_config_and_connect(struct cmdlineinfo args){
     }
 
     // collect all threads / server responses
-    printf("waiting for threads to term\n");
     for (int i = 0; i < 4; i++)
        pthread_join(tid[i], NULL);
 
@@ -202,10 +201,10 @@ int split_fn_and_chunk(char * fn){
 }
 
 void insert_file_and_chunk_node(char * fn, struct thread_message *thread_node, int is_list){
-    printf("DEBUG: Inserting file node\n");
+    //printf("DEBUG: Inserting file node\n");
     int chunk_num = split_fn_and_chunk(fn);
-    fn = fn + 1*sizeof(char);
-    
+    //printf("n: %s\n", fn);
+    //fn = fn + 1*sizeof(char);
     
     if(file_head == NULL){
         struct file_node * node = calloc(1, sizeof(struct file_node));
@@ -248,6 +247,7 @@ void insert_file_and_chunk_node(char * fn, struct thread_message *thread_node, i
 void compute_if_files_are_complete(){
     struct file_node * crawl = file_head;
     while(crawl != NULL){
+        
         struct chunk_node * chucrawl = crawl->head;
         int sum = 0;
         while(chucrawl != NULL){
@@ -255,9 +255,9 @@ void compute_if_files_are_complete(){
             sum += chucrawl->chunknum;
             chucrawl = chucrawl->next;
         }
-        //printf("sum: %d", sum);
-        // if all 4 parts are received, sum of chunknum is 10
-        if(sum == 10){
+        
+        // if all 4 parts are received, sum of chunknum is 6 (0 + 1 + 2 + 3)
+        if(sum == 6){
             crawl->is_complete = 1;
         }
         else{
@@ -272,8 +272,17 @@ void compute_if_files_are_complete(){
 void add_chunk(struct file_node *filenode, char * chunk_msg, int is_list, int num){
     // this function will create a chunk node and add it to the chunk linked list
     // if is-list is 1 then it will just update chunknode->chunkname and chunknode->filename  
-    printf("DEBUG: inserting chunk node\n");  
-   
+    
+    // first check if this chunk has already been collected
+    struct chunk_node * crawl_chunks = filenode->head;
+    while(crawl_chunks != NULL){
+        if(crawl_chunks->chunknum == num){
+            return;
+        }
+        crawl_chunks = crawl_chunks->next;
+    }
+
+    //printf("DEBUG: inserting chunk node\n");  
 
     // create new node and add to chunk linkedlist
     struct chunk_node * new_node = calloc(1, sizeof(struct chunk_node));
@@ -307,10 +316,10 @@ void create_linked_list(){
     for(i = 0; i < 4; i++){
         struct thread_message * node = malloc(sizeof(struct thread_message));
         node->next = thread_head;
-        node->server_num = 4-i;
         thread_head = node;
         thread_head->msg = NULL;
         thread_head->connfd = -1;
+        thread_head->server_num = 4-i;
     }
     return;
 }
@@ -324,6 +333,10 @@ void delete(){
          temp = thread_head;
          thread_head = thread_head->next;
          free(temp->msg);
+         if(temp->send_chunks[0] != NULL)
+            free(temp->send_chunks[0]);
+         if(temp->send_chunks[1] != NULL)
+            free(temp->send_chunks[1]);
          free(temp);
      }
      
@@ -426,6 +439,9 @@ void separate_file_to_chunks_and_store(int floor, FILE * fp, int x){
         bzero(file, MAXBUF);
     }
     num_bytes = fread(file, 1, floor + 6, fp);  // this will read to the end of the file since the remainder < 4
+    pos += (int)num_bytes;
+    fseek(fp, pos, SEEK_SET);
+    delegate_chunk_to_server(&server_num, file, i); 
 
 }
 
@@ -443,9 +459,12 @@ void delegate_chunk_to_server(int * server_num, char * file, int chunk_num){
                 sprintf(intconv, "%d", chunk_num);
                 strcpy(this_send_chunk, intconv);
                 strcat(this_send_chunk, file);
-                crawl->send_chunks[i] = this_send_chunk;
-                //printf("Inserted to server num %d\n", crawl->server_num);
-                //printf("Inserted: %s\n", crawl->send_chunks[i]);
+                if(crawl->send_chunks[0] != NULL){
+                    crawl->send_chunks[1] = this_send_chunk;
+                }
+                else{
+                    crawl->send_chunks[0] = this_send_chunk;
+                }
             }
             crawl = crawl->next;
         }
@@ -453,5 +472,21 @@ void delegate_chunk_to_server(int * server_num, char * file, int chunk_num){
             *server_num = (*server_num + 1) % 4; // bound betweeen 1 to 4
         }
     }
-    
+}
+
+
+void print_thread_linked_list(){
+    printf("\n\n");
+    struct thread_message * crawl = thread_head;
+    while(crawl != NULL){
+        printf("\n--Server %d--\n", crawl->server_num);
+        printf("connnection id: %d\n",crawl->connfd);
+        if(crawl->send_chunks[0] != NULL){
+            printf("Chunk 1: %c\n", crawl->send_chunks[0][0]);
+        }
+        if(crawl->send_chunks[1] != NULL){
+            printf("Chunk 2: %c\n", crawl->send_chunks[1][0]);
+        }
+    crawl = crawl->next;
+    }
 }

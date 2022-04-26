@@ -49,6 +49,7 @@ char config_path[LISTENQ];
 struct thread_message *thread_head;
 struct file_node *file_head;
 
+void print_thread_linked_list();
 void separate_file_to_chunks_and_store(int floor, FILE * fp, int server_num);
 int pick_delegation_scheme(int x);
 void delegate_chunk_to_server(int * server_num, char * file, int chunk_num);

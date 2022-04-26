@@ -47,7 +47,7 @@ void list_directory(int connfd, struct msg_info * info){
 
 void receive_file(int connfd, struct msg_info *info){
     // rename file piece
-    printf("receviing file\n");
+    //printf("\n\n--receviing file---\n");
 
     // while loop and write file to disc
     size_t n; 
@@ -55,30 +55,32 @@ void receive_file(int connfd, struct msg_info *info){
     bzero(buf, MAXBUF);
     n = read(connfd, buf, MAXBUF); 
 
-    printf("received: %s\n", buf);
+    //printf("received: %s\n", buf);
     char chunk_num = buf[0];
-    printf("chunknum: %c\n", buf[0]);
+    printf("Received chunknum: %c\n", buf[0]);
     char * adjbuf = buf + 1;
 
     // write to disc
-
     FILE * fp;
     char path[LISTENQ];
     bzero(path, LISTENQ);
     strcpy(path, info->server_dir);
-    printf("here\n");
     strcat(path, "/");
     strcat(path, info->user);
     strcat(path, "/");
     strcat(path, info->file);
     strcat(path, ".");
     strncat(path, &chunk_num, sizeof(chunk_num));
-    //strcat(path, chunk_num);
-    printf("here3\n");
     fp = fopen(path, "wb");
-    printf("here3\n");
     fwrite(adjbuf, 1, strlen(adjbuf), fp);
+
     fclose(fp);
+
+    // send confirmation
+    char msg[MAXBUF];
+    bzero(msg, MAXBUF);
+    sprintf(msg, "File stored in server directory: %s", info->server_dir);
+    write(connfd, msg, strlen(msg));
 
     return;
 }
@@ -103,8 +105,6 @@ void parse_header(char * request_msg, struct msg_info *info){
 
     char * cmd = strtok_r(cmdline, " ", &cmdline);
     cmd = strdup(cmd);
-
-    printf("here\n");
 
     // now the split is conditional on the command just read
     char * filepath, * optional, * chunk;
@@ -236,6 +236,8 @@ void listFilesRecursively(char *basePath, int connfd)
             strcpy(buf, dp->d_name);
             strcat(buf, "\n");
             printf("%s\n", dp->d_name);
+
+            printf("Filename: %s\n", buf);
 
             write(connfd, buf, strlen(buf));
 

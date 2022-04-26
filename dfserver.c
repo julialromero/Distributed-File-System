@@ -83,7 +83,7 @@ void * thread(void * argument)
             continue;
         }
         printf("Num bytes: %d\n", n);
-        printf("RECEIVED: %s\n", buf);
+        //printf("RECEIVED: %s\n", buf);
         parse_and_execute(buf, connfd);
         return NULL;
     }
@@ -102,17 +102,12 @@ void parse_and_execute(char * buf, int connfd){
     if(booll != 1){
         return;
     }
-    
+
     if(strcasecmp("PUT", info.cmd) == 0){
-        printf("put\n");
+        //printf("put\n");
+        receive_file(connfd, &info);
         receive_file(connfd, &info);
 
-        // send confirmation
-        char msg[MAXBUF];
-        bzero(msg, MAXBUF);
-        sprintf(msg, "File stored in server directory: %s", info.server_dir);
-        //strcpy(msg, "File stored in server directory: %s", info.server_dir);
-        write(connfd, msg, strlen(msg));
     }
 
     // if(strcasecmp("GET", info->cmd){

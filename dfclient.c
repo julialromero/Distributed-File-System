@@ -99,7 +99,7 @@ void do_put(struct cmdlineinfo cmdline){
     } 
 
     int x = sum % 4;
-    printf("x value is %d\n", x);
+    //printf("x value is %d\n", x);
 
     // calculate length of the 4 chunks
     FILE * fp = fopen(cmdline.fn, "rb");
@@ -113,23 +113,35 @@ void do_put(struct cmdlineinfo cmdline){
     parse_config_and_connect(cmdline);
 
     // iterate thru connectiuons
+    print_thread_linked_list();
     struct thread_message *crawl = thread_head;
+    size_t n; 
     int connfd;
+    char buf[MAXBUF]; 
     while(crawl != NULL){
         connfd = crawl->connfd;
-        if(connfd < 0){     // if we did not connect to this server 
+        if(connfd == NULL | connfd < 0){     // if we did not connect to this server 
             crawl = crawl->next;
             continue;
         }
-        printf("connfd: %d\n", connfd);
+        //printf("connfd: %d\n", connfd);
+        //printf("\nServer num: %d\n", crawl->server_num);
+        //printf("Sending: %c\n", crawl->send_chunks[0][0]);
         char to_send[MAXBUF];
-        //strcpy(to_send, chunk)
         strcpy(to_send, crawl->send_chunks[0]);
-        //printf("to send: %s\n", to_send);
         write(connfd, to_send, strlen(to_send));
+
+        n = read(crawl->connfd, buf, MAXBUF); 
+
+        //printf("Sending: %c\n", crawl->send_chunks[1][0]);
+        bzero(to_send, MAXBUF);
+        strcpy(to_send, crawl->send_chunks[1]);
+        write(connfd, to_send, strlen(to_send));
+        
+        n = read(crawl->connfd, buf, MAXBUF); 
+
         crawl = crawl->next;
     }
-    // close_connections(); // TODO - close all connections
 }
 
 
@@ -151,7 +163,7 @@ void * thread(void * argument)
     bzero(cmd, MAXBUF);
     strcpy(cmd, args.cmd);
 
-    printf("THREAD - Connected to Server %d\n", server_num);
+    //printf("THREAD - Connected to Server %d\n", server_num);
 
     write(connfd, msg, strlen(msg));
 
@@ -218,7 +230,7 @@ void * thread(void * argument)
     }
     free(cache_buf);
     //close(connfd);
-    printf("THREAD - Connection closed\n");
+    //printf("THREAD - Connection closed\n");
     pthread_exit(NULL);
     return NULL;
 }

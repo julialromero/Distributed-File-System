@@ -55,9 +55,9 @@ void receive_file(int connfd, struct msg_info *info){
     bzero(buf, MAXBUF);
     n = read(connfd, buf, MAXBUF); 
 
-    //printf("received: %s\n", buf);
+    //printf("file chunk received: %s\n", buf);
     char chunk_num = buf[0];
-    printf("Received chunknum: %c\n", buf[0]);
+    //printf("Received chunknum: %c\n", buf[0]);
     char * adjbuf = buf + 1;
 
     // write to disc
@@ -91,6 +91,7 @@ void parse_header(char * request_msg, struct msg_info *info){
         LIST: "user\r\npass\r\ndir\r\ncmd <subfolder>"
         GET/PUT: "user\r\npass\r\ndir\r\ncmd filepath <subfolder>"
     */
+    //printf("DEBUG: Received header: %s\n", request_msg);
     char * user = strtok_r(request_msg, "\r\n", &request_msg);
     user =strdup(user);
     
@@ -187,36 +188,6 @@ int checkIfFileExists(char * filename)
     return 0;
 }
 
-// returns 1 if successful, returns 0 if not
-int get_file(FILE * fp, char * buf, int connfd, int i)
-{
-    printf("Sending file\n");
-    // if(strcasecmp(path, "www/") == 0){
-    //     bzero(path, MAXBUF);
-    //     strcpy(path, "www/index.html");
-    // }
-
-    int num_bytes;
-    while(1){
-        bzero(buf, MAXBUF);
-        num_bytes = fread(buf, 1, MAXBUF, fp);
-        // printf("Num bytes sending: %d\n", num_bytes);
-
-        // stop if end of file is reached
-        if (num_bytes == 0){ 
-            break;
-        }
-        if (i == 0){
-            char * headerspace = "\r\n\r\n";
-            write(connfd, headerspace, strlen(headerspace));
-            i++;
-        }
-        // send file chunk
-        write(connfd, buf, num_bytes);
-    }
-    return 1;
-}
-
 void listFilesRecursively(char *basePath, int connfd)
 {
     char path[1000];
@@ -235,7 +206,6 @@ void listFilesRecursively(char *basePath, int connfd)
             bzero(buf, 1002);
             strcpy(buf, dp->d_name);
             strcat(buf, "\n");
-            printf("%s\n", dp->d_name);
 
             printf("Filename: %s\n", buf);
 
@@ -252,8 +222,6 @@ void listFilesRecursively(char *basePath, int connfd)
 
     closedir(dir);
 }
-
-// "USER1\r\nPASS1\r\nPUT 1.txt chunk# optional"
 
 int authenticate_and_create_directory(int connfd, struct msg_info *info){
     // check if login is valid
@@ -284,6 +252,7 @@ int authenticate_and_create_directory(int connfd, struct msg_info *info){
 int check_if_valid_login(struct msg_info *info){
     // function to read dfs.conf and search for matching username password
     // returns 1 if valid, 0 if not
+
  
     return 1;
 }
@@ -317,3 +286,107 @@ int open_listenfd(int port)
 
     return listenfd;
 } 
+
+// -----------GET---------------- //
+void get_and_send_files_recursively(char *basePath, int connfd, char * target_file, int * done)
+{
+    if(*done == 2)
+        return;
+    char path[1000];
+    char full_fn[500];
+    struct dirent *dp;
+    DIR *dir = opendir(basePath);
+    char buf[1002];
+
+    // Unable to open directory stream
+    if (!dir)
+        return;
+
+    while ((dp = readdir(dir)) != NULL)
+    {
+        if (strcmp(dp->d_name, ".") != 0 && strcmp(dp->d_name, "..") != 0)
+        {
+            bzero(buf, 1002);
+            strcpy(buf, dp->d_name);
+            
+            strncpy(full_fn,  buf, strlen(buf) - 2);
+            //printf("Filename: %s\n", buf);
+            strcat(buf, "\n");
+            //write(connfd, buf, strlen(buf));
+
+            // Construct new path from our base path
+            strcpy(path, basePath);
+            //strcat(path, "/");
+            strcat(path, dp->d_name);
+
+            if(strcasecmp(full_fn, target_file) == 0){
+                printf("File found: %s\n", path);
+                send_file(path, connfd);
+                write(connfd, "\r\n", strlen("\r\n"));
+
+                // int n = read(connfd, buf, MAXBUF); 
+                // bzero(buf);
+                *done = *done + 1;
+                printf("DONE: %d\n", *done);
+                if(*done == 2)
+                    return;
+                write(connfd, "\r\n", strlen("\r\n"));
+            }
+
+            get_and_send_files_recursively(path, connfd, target_file, done);
+            // if(*done == 1){
+            //     return;
+            // }
+        }
+    }
+
+    closedir(dir);
+}
+
+void send_file(char * path, int connfd)
+{
+    char buf[MAXBUF-5];   // to store the file chunk
+    char send_buf[MAXBUF];    // first character is file chunk number
+    FILE * fp = fopen(path, "rb");
+    if(fp == NULL){
+        printf("Opening file is unsuccessful.\n");
+        write(connfd, "File open unsuccessful", strlen("File open unsuccessful"));
+        return;
+    }
+
+    //printf("--------Sending file---------\n");
+    int num_bytes;
+
+    bzero(send_buf, MAXBUF);
+    
+    char chunk_num = path[strlen(path) - 1];
+    char convert[2];
+    convert[0] = chunk_num;
+    convert[1] = '\0';
+
+
+    memcpy(send_buf, convert, sizeof(convert));
+    bzero(buf, MAXBUF-5);
+    num_bytes = fread(buf, 1, MAXBUF-5, fp);
+    strcat(send_buf, buf);
+    int n = write(connfd, send_buf, strlen(send_buf));
+    printf("%s", send_buf);
+    while(num_bytes != 0){
+        // for first send, append chunk number to front of buf
+        bzero(send_buf, MAXBUF);
+        num_bytes = fread(send_buf, 1, MAXBUF, fp);
+        
+
+        // stop if end of file is reached
+        if (num_bytes == 0){ 
+            break;
+        }
+        
+        // send file chunk
+        write(connfd, send_buf, num_bytes);
+        //printf("%s", send_buf);
+        n  = n + num_bytes;
+    }
+    printf("Sent bytes: %d\n", n);
+    return;
+}

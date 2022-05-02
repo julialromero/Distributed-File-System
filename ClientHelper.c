@@ -17,7 +17,6 @@
 #define MAXBUF   8192 
 #define LISTENQ  1024
 
-
 void display_and_handle_menu(){
     char buf[MAXBUF];
     char * copy, *cmd, *fn, *subfolder;
@@ -53,17 +52,15 @@ void display_and_handle_menu(){
         cmdline.fn = fn;
         cmdline.subfolder = subfolder;
 
-        if(cmdline.fn != NULL){
-            printf("fn--%s--\n", cmdline.fn);
-        }
-
         // call subroutines based on entered command
         if(strcasecmp("list", cmdline.cmd) == 0){
             // printf("Going to tolist()\n");
             do_list(cmdline);
         }
 
-        if(strcasecmp("get", cmdline.cmd) == 0){}
+        if(strcasecmp("get", cmdline.cmd) == 0){
+            do_get(cmdline);
+        }
 
         if(strcasecmp("put", cmdline.cmd) == 0){
             do_put(cmdline);
@@ -71,36 +68,8 @@ void display_and_handle_menu(){
     }
 }
 
-void create_msg(struct client_info *info, char * dir, struct cmdlineinfo args){
-    /*
-        Here is the header formatting for each command --
-        LIST: "user\r\npass\r\ndir\r\ncmd <subfolder>"
-        GET/PUT: "user\r\npass\r\ndir\r\ncmd filepath <subfolder>"
-    */
-    //char * str =  "Alice\r\nSimplePassword\r\n";
 
-   char msg[LISTENQ];
-   strcpy(msg, info->user);
-   strcat(msg, "\r\n");
-   strcat(msg, info->pass);
-   strcat(msg, "\r\n");
-   strcat(msg, dir);
-   strcat(msg, "\r\n");
-   strcat(msg, args.cmd);
-
-   if(strcasecmp(args.cmd, "LIST") == 0){
-       info->msg = strdup(msg);
-       return;
-   }
-
-   strcat(msg, " ");
-   strcat(msg, args.fn);
-
-    // printf("DEBUG: msg created: \n%s\n", msg);
-   info->msg = strdup(msg);
-
-   return;
-}
+//--------------FUNCS FOR CONNECTING TO SOCKET--------------//
 
 void parse_config_and_connect(struct cmdlineinfo args){
     // open file and parse this info
@@ -190,8 +159,89 @@ void connect_to_server(struct client_info *info, char * ip, int port, int count,
     return;
 }
 
+int open_sendfd(char *ip, int port){
+    int serverfd, optval=1;;
+    struct sockaddr_in serveraddr;
+    
+    /* Create a socket descriptor */
+    if ((serverfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+        return -1;
+
+    bzero((char *) &serveraddr, sizeof(serveraddr));
+    serveraddr.sin_addr.s_addr = inet_addr("127.0.0.1");    // TODO: figure this out
+  
+    // construct server struct
+    serveraddr.sin_family = AF_INET;  
+     
+    if(port > 0){
+        serveraddr.sin_port = htons((unsigned short)port);
+    }
+    else{
+        serveraddr.sin_port = htons(990);
+    }
+
+    // establish connection
+    int sockid = connect(serverfd, (struct sockaddr*)&serveraddr, sizeof(serveraddr));
+    if (sockid < 0){
+        //perror("Error: ");
+		return -1;
+	}
+    return serverfd;
+}
+
+void create_msg(struct client_info *info, char * dir, struct cmdlineinfo args){
+    /*
+        Here is the header formatting for each command --
+        LIST: "user\r\npass\r\ndir\r\ncmd <subfolder>"
+        GET/PUT: "user\r\npass\r\ndir\r\ncmd filepath <subfolder>"
+    */
+    //char * str =  "Alice\r\nSimplePassword\r\n";
+
+   char msg[LISTENQ];
+   strcpy(msg, info->user);
+   strcat(msg, "\r\n");
+   strcat(msg, info->pass);
+   strcat(msg, "\r\n");
+   strcat(msg, dir);
+   strcat(msg, "\r\n");
+   strcat(msg, args.cmd);
+
+   if(strcasecmp(args.cmd, "LIST") == 0){
+       info->msg = strdup(msg);
+       return;
+   }
+
+   strcat(msg, " ");
+   strcat(msg, args.fn);
+
+    // printf("DEBUG: msg created: \n%s\n", msg);
+   info->msg = strdup(msg);
+
+   return;
+}
+
+
+//--------------FUNCS FOR STORING RECEIVED FILE CHUNK INFORMATION--------------//
+struct thread_message * find_server_node(int target_server_num){
+    // save the received message in the linked list node dedicated to this thread
+    if(thread_head == NULL){
+        printf("THREAD - Error = thread message/ head of LL is null\n");
+        pthread_exit(NULL);
+        return NULL;
+    }
+    struct thread_message * crawl = thread_head;
+    while(crawl != NULL){
+        if(crawl->server_num == target_server_num){
+            return crawl;
+            // store message in dedicated node
+        }
+        crawl = crawl->next;
+    }
+    return NULL;
+}
 
 int split_fn_and_chunk(char * fn){
+    printf("DEBUG: Received filename: %s\n", fn);
     int len = strlen(fn);
     char digit = fn[len-1];
     fn[len - 1] = '\0';
@@ -200,11 +250,21 @@ int split_fn_and_chunk(char * fn){
     return i;
 }
 
-void insert_file_and_chunk_node(char * fn, struct thread_message *thread_node, int is_list){
+int split_getfile_and_chunk(char * recv){
+    //printf("DEBUG: Received filename: %s\n", fn);
+    //int len = strlen(fn);
+    char digit = recv[0];
+    recv = recv + 1;
+    int i = digit - '0';
+    return i;
+}
+
+void insert_file_and_chunk_node(char * fn, char * send_msg, int is_list, int chunk_num){ //  TODO: change this to char * bc easier
     //printf("DEBUG: Inserting file node\n");
-    int chunk_num = split_fn_and_chunk(fn);
-    //printf("n: %s\n", fn);
-    //fn = fn + 1*sizeof(char);
+    // list sends a filename
+    // if(is_list == 1){
+    //     chunk_num = split_fn_and_chunk(recv);
+    // }
     
     if(file_head == NULL){
         struct file_node * node = calloc(1, sizeof(struct file_node));
@@ -215,7 +275,7 @@ void insert_file_and_chunk_node(char * fn, struct thread_message *thread_node, i
         node->next = NULL;
         
         // this function will populate the chunk linked list -- there will be a node for each unique received chunk/filename chunk 
-        add_chunk(node, thread_node->msg, is_list, chunk_num);
+        add_chunk(node, send_msg, is_list, chunk_num);
         return;
     }
 
@@ -225,7 +285,7 @@ void insert_file_and_chunk_node(char * fn, struct thread_message *thread_node, i
         //printf("crawl fn: %s\n", crawl->filename);
         // if file already is in linked list
         if (strcmp(fn, crawl->filename) == 0){
-            add_chunk(crawl, thread_node->msg, is_list, chunk_num);
+            add_chunk(crawl, send_msg, is_list, chunk_num);
             return;
         }
         // if this file is not in the linked list then insert it
@@ -235,7 +295,7 @@ void insert_file_and_chunk_node(char * fn, struct thread_message *thread_node, i
             strcpy(node->filename, fn);
             node->next = NULL;
             crawl->next = node;
-            add_chunk(node, thread_node->msg, is_list, chunk_num);
+            add_chunk(node, send_msg, is_list, chunk_num);
             return;
         }
         crawl = crawl->next;
@@ -257,6 +317,7 @@ void compute_if_files_are_complete(){
         }
         
         // if all 4 parts are received, sum of chunknum is 6 (0 + 1 + 2 + 3)
+        printf("Sum: %d\n", sum);
         if(sum == 6){
             crawl->is_complete = 1;
         }
@@ -273,6 +334,7 @@ void add_chunk(struct file_node *filenode, char * chunk_msg, int is_list, int nu
     // this function will create a chunk node and add it to the chunk linked list
     // if is-list is 1 then it will just update chunknode->chunkname and chunknode->filename  
     
+    printf("---------\nDEBUG: filenode name: %s\n", filenode->filename); 
     // first check if this chunk has already been collected
     struct chunk_node * crawl_chunks = filenode->head;
     while(crawl_chunks != NULL){
@@ -281,31 +343,38 @@ void add_chunk(struct file_node *filenode, char * chunk_msg, int is_list, int nu
         }
         crawl_chunks = crawl_chunks->next;
     }
-
     //printf("DEBUG: inserting chunk node\n");  
 
     // create new node and add to chunk linkedlist
     struct chunk_node * new_node = calloc(1, sizeof(struct chunk_node));
     new_node->this_file = filenode;
     new_node->chunknum = num;
+    printf("inserting chunk num: %d\n", new_node->chunknum);
     new_node->next = NULL;
     new_node->msg = NULL;
 
     if(filenode->head == NULL){
+        new_node->msg = chunk_msg;
         filenode->head = new_node;
         return;
     }
     struct chunk_node * chucrawl = filenode->head;
     while(chucrawl->next != NULL){
+        //printf("traversing: chunk %d\n", chucrawl->chunknum);
         chucrawl=chucrawl->next;
     }
     chucrawl->next = new_node;
   
     if(is_list == 1){
+        //printf("list\n");
         return;
     }
 
     // if islist is 0 then it will update chunknode->chunk
+    if(chunk_msg == NULL){
+        printf("NULL!!!!\n");
+    }
+    //printf("ADDING MESSAGE: %s\n", chunk_msg);
     new_node->msg = chunk_msg;
 
     return;
@@ -320,6 +389,8 @@ void create_linked_list(){
         thread_head->msg = NULL;
         thread_head->connfd = -1;
         thread_head->server_num = 4-i;
+        thread_head->send_chunks0 = NULL;
+        thread_head->send_chunks1 = NULL;
     }
     return;
 }
@@ -333,10 +404,10 @@ void delete(){
          temp = thread_head;
          thread_head = thread_head->next;
          free(temp->msg);
-         if(temp->send_chunks[0] != NULL)
-            free(temp->send_chunks[0]);
-         if(temp->send_chunks[1] != NULL)
-            free(temp->send_chunks[1]);
+         if(temp->send_chunks0 != NULL)
+            free(temp->send_chunks0);
+         if(temp->send_chunks1 != NULL)
+            free(temp->send_chunks1);
          free(temp);
      }
      
@@ -346,7 +417,9 @@ void delete(){
      }
      struct file_node * fn;
      while(file_head != NULL){
-         free(file_head->head);
+         delete_chunk_list(file_head->head);
+         free(file_head->filename);
+
          fn = file_head;
          file_head = file_head->next;
          free(fn);
@@ -354,9 +427,19 @@ void delete(){
      thread_head = NULL;
      file_head = NULL;
 
-
     return;
 }
+
+void delete_chunk_list(struct chunk_node * head){
+    struct chunk_node * temp = head;
+    while(head != NULL){
+        temp = head;
+        //printf("deleting num%d\n", temp->chunknum);
+        head = head->next;
+        //free(temp);
+    }
+}
+
 
 //--------------PUT HELPER FUNCS--------------//
 
@@ -403,16 +486,16 @@ int get_file_length(FILE * fp){
 int pick_delegation_scheme(int x){
      // server delegation scheme based on x
     if(x == 0){
-        return 1; // { {1, 2}, {2, 3}, {3, 4}, {4, 1}};
+        return 0; // { {1, 2}, {2, 3}, {3, 4}, {4, 1}};
     }
     else if(x == 1){
-        return 4; //{{4, 1}, {1, 2}, {2, 3}, {3, 4}};
+        return 3; //{{4, 1}, {1, 2}, {2, 3}, {3, 4}};
     }
     else if(x == 2){
-        return 3; //{{3, 4}, {4, 1}, {1, 2}, {2, 3}};
+        return 2; //{{3, 4}, {4, 1}, {1, 2}, {2, 3}};
     }
     else if(x == 3){
-        return 2; //{{2, 3}, {3, 4}, {4, 1}, {1, 2}};
+        return 1; //{{2, 3}, {3, 4}, {4, 1}, {1, 2}};
     }
     return 1;
 }
@@ -429,18 +512,19 @@ void separate_file_to_chunks_and_store(int floor, FILE * fp, int x){
 
     int i;
     for(i = 0; i < 3; i++){
+        bzero(file, MAXBUF);
         num_bytes = fread(file, 1, floor, fp);
         pos += (int)num_bytes;
         fseek(fp, pos, SEEK_SET);
 
-        //printf("Delegating to server %d\n", server_num);
         delegate_chunk_to_server(&server_num, file, i); 
-        //server_num = server_num +1 % 4;
-        bzero(file, MAXBUF);
+ 
     }
+    bzero(file, MAXBUF);
     num_bytes = fread(file, 1, floor + 6, fp);  // this will read to the end of the file since the remainder < 4
     pos += (int)num_bytes;
     fseek(fp, pos, SEEK_SET);
+
     delegate_chunk_to_server(&server_num, file, i); 
 
 }
@@ -449,21 +533,30 @@ void separate_file_to_chunks_and_store(int floor, FILE * fp, int x){
 void delegate_chunk_to_server(int * server_num, char * file, int chunk_num){
     // for each assigned server
     int i;
+   
+    int length = snprintf( NULL, 0, "%d", chunk_num);
+    char* str = malloc( length + 1 );
+    snprintf( str, length + 1, "%d", chunk_num);
+    
+
+    int len = strlen(str) + strlen(file);
+    char * this_send_chunk = calloc(1, len);
+    bzero(this_send_chunk, len);
+    strcpy(this_send_chunk, str);
+    strcat(this_send_chunk, file);
+  
     for(i = 0; i < 2; i++){
+        //printf("Delegating to server %d\n", *server_num);
         struct thread_message * crawl = thread_head;
         while(crawl != NULL){
             // if this node is the assigned server than add
             if(crawl->server_num - 1 == *server_num){
-                char * this_send_chunk = calloc(1, strlen(file) + 1);
-                char intconv[5];
-                sprintf(intconv, "%d", chunk_num);
-                strcpy(this_send_chunk, intconv);
-                strcat(this_send_chunk, file);
-                if(crawl->send_chunks[0] != NULL){
-                    crawl->send_chunks[1] = this_send_chunk;
+                
+                if(crawl->send_chunks0 == NULL){
+                    crawl->send_chunks0 = strdup(this_send_chunk);
                 }
                 else{
-                    crawl->send_chunks[0] = this_send_chunk;
+                    crawl->send_chunks1 = strdup(this_send_chunk); 
                 }
             }
             crawl = crawl->next;
@@ -472,21 +565,33 @@ void delegate_chunk_to_server(int * server_num, char * file, int chunk_num){
             *server_num = (*server_num + 1) % 4; // bound betweeen 1 to 4
         }
     }
+    free(this_send_chunk);
 }
-
 
 void print_thread_linked_list(){
     printf("\n\n");
     struct thread_message * crawl = thread_head;
     while(crawl != NULL){
         printf("\n--Server %d--\n", crawl->server_num);
-        printf("connnection id: %d\n",crawl->connfd);
-        if(crawl->send_chunks[0] != NULL){
-            printf("Chunk 1: %c\n", crawl->send_chunks[0][0]);
+        // printf("connnection id: %d\n",crawl->connfd);
+        if(crawl->send_chunks0 != NULL){
+            printf("Chunk 1: %c\n", crawl->send_chunks0[0]);
+            printf("Msg1: %s\n\n", crawl->send_chunks0);
         }
-        if(crawl->send_chunks[1] != NULL){
-            printf("Chunk 2: %c\n", crawl->send_chunks[1][0]);
+        if(crawl->send_chunks1 != NULL){
+            printf("Chunk 2: %c\n", crawl->send_chunks1[0]);
+            printf("Msg2: %s\n\n", crawl->send_chunks1);
         }
-    crawl = crawl->next;
+        crawl = crawl->next;
+    }
+    printf("End of LL\n");
+}
+
+void print_linked_list_get(){
+    struct thread_message * crawl = thread_head;
+    while(crawl != NULL){
+        printf("\n--Server %d--\n", crawl->server_num);
+        printf("%s\n", crawl->msg);
+        crawl = crawl->next;
     }
 }

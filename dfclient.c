@@ -57,7 +57,8 @@ void do_list(struct cmdlineinfo cmdline){
         buf = strdup(crawl->msg);
         char * temp = strtok_r(buf, "\n", &buf);
         while(temp != NULL){
-            insert_file_and_chunk_node(temp, crawl, 1);
+            int chunk_num = split_fn_and_chunk(temp);
+            insert_file_and_chunk_node(temp, crawl->msg, 1, chunk_num);
             temp = strtok_r(buf, "\n", &buf);
         }
         crawl = crawl->next;
@@ -86,7 +87,6 @@ void do_list(struct cmdlineinfo cmdline){
 
     // delete message linked list
     delete();
-
 }
 
 void do_put(struct cmdlineinfo cmdline){
@@ -99,7 +99,7 @@ void do_put(struct cmdlineinfo cmdline){
     } 
 
     int x = sum % 4;
-    //printf("x value is %d\n", x);
+    printf("x value is %d\n", x);
 
     // calculate length of the 4 chunks
     FILE * fp = fopen(cmdline.fn, "rb");
@@ -108,42 +108,148 @@ void do_put(struct cmdlineinfo cmdline){
 
     // separate file into chunks and store in linkedlist node corresponding to destination server
     separate_file_to_chunks_and_store(floor, fp, x);
-
+    
     // finally, connect to servers
+    printf("Parsing config and connecting\n");
     parse_config_and_connect(cmdline);
 
-    // iterate thru connectiuons
+    // iterate thru connections
     print_thread_linked_list();
     struct thread_message *crawl = thread_head;
     size_t n; 
     int connfd;
     char buf[MAXBUF]; 
+    bzero(buf, MAXBUF);
     while(crawl != NULL){
         connfd = crawl->connfd;
-        if(connfd == NULL | connfd < 0){     // if we did not connect to this server 
+        if(connfd < 0){     // if we did not connect to this server 
             crawl = crawl->next;
             continue;
         }
         //printf("connfd: %d\n", connfd);
-        //printf("\nServer num: %d\n", crawl->server_num);
-        //printf("Sending: %c\n", crawl->send_chunks[0][0]);
-        char to_send[MAXBUF];
-        strcpy(to_send, crawl->send_chunks[0]);
-        write(connfd, to_send, strlen(to_send));
+        
+        //printf("Sending: %c\n", crawl->send_chunks0[0]);
+       
+        write(connfd, crawl->send_chunks0, strlen(crawl->send_chunks0));
 
         n = read(crawl->connfd, buf, MAXBUF); 
-
-        //printf("Sending: %c\n", crawl->send_chunks[1][0]);
-        bzero(to_send, MAXBUF);
-        strcpy(to_send, crawl->send_chunks[1]);
-        write(connfd, to_send, strlen(to_send));
+       
+        //printf("Sending: %c\n", crawl->send_chunks1[0]);
+       
+        write(connfd, crawl->send_chunks1, strlen(crawl->send_chunks1));
         
         n = read(crawl->connfd, buf, MAXBUF); 
 
         crawl = crawl->next;
     }
+    
+    // delete message linked list
+    //printf("Deleting linked lists...\n");
+    delete();
 }
 
+void do_get(struct cmdlineinfo cmdline){
+    // create message linked list
+    create_linked_list();
+
+    // create socket and connect to servers
+    parse_config_and_connect(cmdline);
+
+    // parse message linked list and populate file and chunk linked lists
+    print_linked_list_get();
+    printf("-----------------\n");
+    struct thread_message * crawl = thread_head;
+    char * buf;
+    if(crawl == NULL){
+        printf("Failed to create thread ll?\n");
+    }
+    while(crawl != NULL){
+        if(crawl->msg == NULL){
+            crawl = crawl->next;
+            continue;
+        }
+   
+        buf = strdup(crawl->msg);
+        char * temp1 = strtok_r(buf, "\r\n", &buf);
+        temp1 = strdup(temp1);
+        //printf("Msg1--\n%s\n", temp1);
+        int chunk1 = split_getfile_and_chunk(temp1);
+        temp1 = temp1+1;
+        //printf("Msg1after--\n%s\n", temp1);
+
+        char * temp2 = strtok_r(buf, "\r\n", &buf);
+        if(temp2 != NULL){
+            temp2 = strdup(temp2);
+        }
+      
+        int chunk2 = split_getfile_and_chunk(temp2);
+        temp2 = temp2+1;
+
+        insert_file_and_chunk_node(cmdline.fn, temp1, 0, chunk1);
+        insert_file_and_chunk_node(cmdline.fn, temp2, 0, chunk2);
+        crawl = crawl->next;
+    }
+    printf("-----------------\n");
+    compute_if_files_are_complete();
+
+    struct file_node * fcrawl = file_head;
+    if(file_head == NULL){
+        printf("PROGRAM: File not found\n");
+        return;
+    }
+
+    if(file_head->is_complete != 1){
+        printf("Printing file --\n%s [incomplete]\n", cmdline.fn);
+        return;
+    }
+    
+    // reconstruct file and save. Order  0, 1, 2, 3
+    char *save_buf;   
+    file_head->filename = cmdline.fn;
+    struct chunk_node * ptr = file_head->head;
+    int i = 0;
+    int iter = 0;
+    char * temp;
+    int n;
+    while(1){
+        ptr = file_head->head;
+        while(ptr != NULL){
+            
+            if(ptr->chunknum == i){
+                FILE * fp;
+                fp = fopen(file_head->filename, "ab");
+                if(fp == NULL){
+                    printf("Failed to open file\n");
+                }
+                
+                if(ptr->msg == NULL){
+                    printf("Msg is null?\n");
+                    ptr = ptr->next;
+                }
+                n = strlen(ptr->msg);
+                fwrite(ptr->msg, 1, n, fp);
+                //printf("Appended:\n%s\n", ptr->msg);
+                fclose(fp); 
+                i++;
+            
+                // if we collected all 4 chunks then exit
+                iter++;
+                if(iter == 4){
+                    break;;
+                }
+            }
+            ptr = ptr->next;
+        }
+        if(iter == 4){
+            break;
+        }
+
+    }
+    // delete message linked list
+    //printf("Deleting\n");
+    delete();
+
+}
 
 void * thread(void * argument) 
 {  
@@ -187,6 +293,7 @@ void * thread(void * argument)
         pthread_exit(NULL);
         return NULL;
     }
+    
 
     // receive msg
     char buf[MAXBUF]; 
@@ -205,63 +312,46 @@ void * thread(void * argument)
         size+=n;   
     }
 
-    printf("Bytes received: %d\n\n", size);
-    // printf("------Received----\n%s\n", cache_buf);
+    if(size == 0){
+        free(cache_buf);
+        pthread_exit(NULL);
+        return NULL;
+    }
 
-    // save the received message in the linked list node dedicated to this thread
-    if(thread_head == NULL){
+    printf("Received:--\n%s\n", cache_buf);
+
+    // if(strcasecmp("GET", cmd) == 0){
+    //     write(connfd, "\r\n", strlen("\r\n"));
+    //     while((n = read(connfd, buf, MAXBUF)) > 0){
+    //     // make sure allocated memory is large enough
+    //     if((cache_buf = realloc(cache_buf, size + n * sizeof(char))) == NULL){
+    //         pthread_exit(NULL);
+    //         return NULL;
+    //     }
+    //     memcpy(cache_buf + size, buf, n);
+    //     size+=n;   
+    // }
+    // }
+
+    printf("\n\nBytes received: %d\n", size);
+
+    //printf("------Received----\n%s\n", cache_buf);
+
+    struct thread_message * target_server_node = find_server_node(server_num);
+    if(target_server_node == NULL){
         printf("THREAD - Error = thread message/ head of LL is null\n");
         pthread_exit(NULL);
         return NULL;
     }
-    struct thread_message * crawl = thread_head;
-    while(crawl != NULL){
-        if(crawl->server_num == server_num){
-            // store message in dedicated node
-            crawl->msg = calloc(1, strlen(cache_buf));
-            strcpy(crawl->msg, cache_buf);
+    target_server_node->msg = calloc(1, strlen(cache_buf));
+    strcpy(target_server_node->msg, cache_buf);//, sizeof(cache_buf));;
+    target_server_node->connfd = connfd;
 
-            // store connection id in dedicated node
-            crawl->connfd = connfd;
-
-            break;
-        }
-        crawl = crawl->next;
-    }
+    
     free(cache_buf);
+    //printf("in server node messg: %s\n", target_server_node->msg);
     //close(connfd);
     //printf("THREAD - Connection closed\n");
     pthread_exit(NULL);
     return NULL;
 }
-
-int open_sendfd(char *ip, int port){
-    int serverfd, optval=1;;
-    struct sockaddr_in serveraddr;
-    
-    /* Create a socket descriptor */
-    if ((serverfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-        return -1;
-
-    bzero((char *) &serveraddr, sizeof(serveraddr));
-    serveraddr.sin_addr.s_addr = inet_addr("127.0.0.1");    // TODO: figure this out
-  
-    // construct server struct
-    serveraddr.sin_family = AF_INET;  
-     
-    if(port > 0){
-        serveraddr.sin_port = htons((unsigned short)port);
-    }
-    else{
-        serveraddr.sin_port = htons(990);
-    }
-
-    // establish connection
-    int sockid = connect(serverfd, (struct sockaddr*)&serveraddr, sizeof(serveraddr));
-    if (sockid < 0){
-        //perror("Error: ");
-		return -1;
-	}
-    return serverfd;
-}
-

@@ -19,7 +19,7 @@
 #define MAXLINE  8192  /* max text line length */
 #define MAXBUF   8192  /* max I/O buffer size */
 #define LISTENQ  1024  /* second argument to listen() */
-#define MAXFILEBUF 60000
+#define MAXFILEBUF 60000  
 
 int mkdir(const char *pathname, mode_t mode);
 
@@ -82,12 +82,11 @@ void * thread(void * argument)
             sleep(1);
             continue;
         }
-        printf("Num bytes: %d\n", n);
-        //printf("RECEIVED: %s\n", buf);
+        // printf("Num bytes: %d\n", n);
+        printf("\n\nRECEIVED: %s\n\n", buf);
         parse_and_execute(buf, connfd);
         return NULL;
     }
-
     // printf("Connection closed.\n\n");
     return NULL;
 }
@@ -107,13 +106,21 @@ void parse_and_execute(char * buf, int connfd){
         //printf("put\n");
         receive_file(connfd, &info);
         receive_file(connfd, &info);
-
     }
 
-    // if(strcasecmp("GET", info->cmd){
-    //     // get all files with prefix info->file and send them back
-    //     continue;
-    // }
+    if(strcasecmp("GET", info.cmd) == 0){
+        // create filepath
+        char path[LISTENQ];
+        strcpy(path, "./");
+        strcat(path, info.server_dir);
+        strcat(path, "/");
+        strcat(path, info.user);
+        strcat(path, "/");
+
+        // check if file exists in dir
+        int done = 0;
+        get_and_send_files_recursively(path, connfd, info.file, &done);
+    }
 
     if(strcasecmp("LIST", info.cmd) == 0){
         // send back a list all files
@@ -125,8 +132,8 @@ void parse_and_execute(char * buf, int connfd){
         strcat(path, "/");
 
         listFilesRecursively(path, connfd);
-       
     }
+
     close(connfd);
     printf("Done sending\n");
     return;

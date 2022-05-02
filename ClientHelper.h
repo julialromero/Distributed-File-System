@@ -3,6 +3,7 @@
 
 #define LISTENQ  1024
 #define MAXBUF   8192 
+
 struct cmdlineinfo {
     char * cmd;
     char * fn;
@@ -27,7 +28,8 @@ struct thread_message {
     int server_num;
     int connfd;
     char * msg;
-    char * send_chunks[2];
+    char * send_chunks0;
+    char * send_chunks1;
     struct thread_message * next;
 };
 
@@ -49,7 +51,12 @@ char config_path[LISTENQ];
 struct thread_message *thread_head;
 struct file_node *file_head;
 
+int split_getfile_and_chunk(char * recv);
+void insert_file_and_chunk_node(char * fn, char * send_msg, int is_list, int chunk_num);
+struct thread_message * find_server_node(int target_server_num);
+void delete_chunk_list(struct chunk_node * head);
 void print_thread_linked_list();
+void print_linked_list_get();
 void separate_file_to_chunks_and_store(int floor, FILE * fp, int server_num);
 int pick_delegation_scheme(int x);
 void delegate_chunk_to_server(int * server_num, char * file, int chunk_num);
@@ -57,13 +64,14 @@ int get_file_length(FILE * fp);
 int md5sum(char *file_name);
 void compute_if_files_are_complete();
 void connect_to_server(struct client_info *info, char * ip, int port, int count, pthread_t tid[4], struct cmdlineinfo cmdinfo);
+int split_fn_and_chunk(char * fn);
 
 void do_put(struct cmdlineinfo cmdline);
 void do_list(struct cmdlineinfo cmdline);
 void do_get(struct cmdlineinfo cmdline);
 
 void display_and_handle_menu();
-void insert_file_and_chunk_node(char * fn, struct thread_message *thread_node, int is_list);
+//void insert_file_and_chunk_node(char * fn, struct thread_message *thread_node, int is_list);
 void add_chunk(struct file_node *filenode, char * chunk_msg, int is_list, int num);  // TODO
 void create_linked_list();
 void delete();

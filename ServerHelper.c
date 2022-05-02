@@ -55,10 +55,15 @@ void receive_file(int connfd, struct msg_info *info){
     bzero(buf, MAXBUF);
     n = read(connfd, buf, MAXBUF); 
 
-    //printf("file chunk received: %s\n", buf);
-    char chunk_num = buf[0];
-    //printf("Received chunknum: %c\n", buf[0]);
-    char * adjbuf = buf + 1;
+    printf("Bytes received: %d\n", n);
+    char * encrypt2 = XOR_encryption(buf, info->pass, n, strlen(info->pass));
+    //printf("\nDecrypted: %s\n", encrypt2);
+
+    char chunk_num = encrypt2[0];
+    //printf("Received chunknum: %c\n", chunk_num);
+    char * adjbuf = encrypt2 + 1;
+    //printf("Strlen: %d\n", strlen(adjbuf));
+    //printf("Strlen: %d\n", n-1);
 
     // write to disc
     FILE * fp;
@@ -72,6 +77,11 @@ void receive_file(int connfd, struct msg_info *info){
     strcat(path, ".");
     strncat(path, &chunk_num, sizeof(chunk_num));
     fp = fopen(path, "wb");
+
+    
+    
+    //fwrite(encrypt2, 1, n-1, fp);
+
     fwrite(adjbuf, 1, strlen(adjbuf), fp);
 
     fclose(fp);
@@ -249,11 +259,12 @@ int authenticate_and_create_directory(int connfd, struct msg_info *info){
 }
 
 // TODO
+void extract_from_config(){return;}
+
 int check_if_valid_login(struct msg_info *info){
     // function to read dfs.conf and search for matching username password
     // returns 1 if valid, 0 if not
 
- 
     return 1;
 }
 
@@ -288,7 +299,7 @@ int open_listenfd(int port)
 } 
 
 // -----------GET---------------- //
-void get_and_send_files_recursively(char *basePath, int connfd, char * target_file, int * done)
+void get_and_send_files_recursively(char *basePath, int connfd, char * target_file, int * done, struct msg_info *info)
 {
     if(*done == 2)
         return;
@@ -310,18 +321,15 @@ void get_and_send_files_recursively(char *basePath, int connfd, char * target_fi
             strcpy(buf, dp->d_name);
             
             strncpy(full_fn,  buf, strlen(buf) - 2);
-            //printf("Filename: %s\n", buf);
             strcat(buf, "\n");
-            //write(connfd, buf, strlen(buf));
 
             // Construct new path from our base path
             strcpy(path, basePath);
-            //strcat(path, "/");
             strcat(path, dp->d_name);
 
             if(strcasecmp(full_fn, target_file) == 0){
                 printf("File found: %s\n", path);
-                send_file(path, connfd);
+                send_file(path, connfd, info);
                 write(connfd, "\r\n", strlen("\r\n"));
 
                 // int n = read(connfd, buf, MAXBUF); 
@@ -333,17 +341,15 @@ void get_and_send_files_recursively(char *basePath, int connfd, char * target_fi
                 write(connfd, "\r\n", strlen("\r\n"));
             }
 
-            get_and_send_files_recursively(path, connfd, target_file, done);
-            // if(*done == 1){
-            //     return;
-            // }
+            get_and_send_files_recursively(path, connfd, target_file, done, info);
+
         }
     }
 
     closedir(dir);
 }
 
-void send_file(char * path, int connfd)
+void send_file(char * path, int connfd, struct msg_info *info)
 {
     char buf[MAXBUF-5];   // to store the file chunk
     char send_buf[MAXBUF];    // first character is file chunk number
@@ -370,13 +376,12 @@ void send_file(char * path, int connfd)
     num_bytes = fread(buf, 1, MAXBUF-5, fp);
     strcat(send_buf, buf);
     int n = write(connfd, send_buf, strlen(send_buf));
-    printf("%s", send_buf);
     while(num_bytes != 0){
         // for first send, append chunk number to front of buf
         bzero(send_buf, MAXBUF);
         num_bytes = fread(send_buf, 1, MAXBUF, fp);
-        
 
+        
         // stop if end of file is reached
         if (num_bytes == 0){ 
             break;
@@ -389,4 +394,15 @@ void send_file(char * path, int connfd)
     }
     printf("Sent bytes: %d\n", n);
     return;
+}
+
+// Encryption method
+char * XOR_encryption(char * str, char * pass, int strlen, int passlen){
+	char * result = (char *)calloc(1, sizeof(char) * strlen);
+
+	for(int i = 0; i < strlen; i++){
+		result[i] = str[i] ^ pass[i % passlen]; // XOR operation between password and every character in string
+	}
+
+	return result;
 }

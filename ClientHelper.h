@@ -30,6 +30,8 @@ struct thread_message {
     char * msg;
     char * send_chunks0;
     char * send_chunks1;
+    int chunk0_len;
+    int chunk1_len;
     struct thread_message * next;
 };
 
@@ -51,15 +53,16 @@ char config_path[LISTENQ];
 struct thread_message *thread_head;
 struct file_node *file_head;
 
+char * XOR_encryption(char * str, char * pass, int strlen, int passlen);
 int split_getfile_and_chunk(char * recv);
 void insert_file_and_chunk_node(char * fn, char * send_msg, int is_list, int chunk_num);
 struct thread_message * find_server_node(int target_server_num);
 void delete_chunk_list(struct chunk_node * head);
 void print_thread_linked_list();
 void print_linked_list_get();
-void separate_file_to_chunks_and_store(int floor, FILE * fp, int server_num);
+void separate_file_to_chunks_and_store(int floor, FILE * fp, int x, struct client_info cinfo);
 int pick_delegation_scheme(int x);
-void delegate_chunk_to_server(int * server_num, char * file, int chunk_num);
+void delegate_chunk_to_server(int * server_num, char * file, int chunk_num, int filelen, struct client_info cinfo);
 int get_file_length(FILE * fp);
 int md5sum(char *file_name);
 void compute_if_files_are_complete();
@@ -78,5 +81,5 @@ void delete();
 void * thread(void * argument);   
 void create_msg(struct client_info *info, char * temp, struct cmdlineinfo args);   // TODO
 int open_sendfd(char *ip, int port);
-void parse_config_and_connect();
+struct client_info parse_config_and_connect(struct cmdlineinfo args, int to_connect);
 #endif

@@ -39,7 +39,7 @@ void do_list(struct cmdlineinfo cmdline){
     create_linked_list();
 
     // create socket and connect to servers
-    parse_config_and_connect(cmdline);
+    parse_config_and_connect(cmdline, 1);
 
     // parse message linked list and populate file and chunk linked lists
     struct thread_message * crawl = thread_head;
@@ -107,14 +107,16 @@ void do_put(struct cmdlineinfo cmdline){
     int floor = (int)len / 4;
 
     // separate file into chunks and store in linkedlist node corresponding to destination server
-    separate_file_to_chunks_and_store(floor, fp, x);
+    struct client_info cinfo = parse_config_and_connect(cmdline, 0);
+    separate_file_to_chunks_and_store(floor, fp, x, cinfo);
+
+    //thread_linked_list();
     
     // finally, connect to servers
-    printf("Parsing config and connecting\n");
-    parse_config_and_connect(cmdline);
+    parse_config_and_connect(cmdline, 1);
 
     // iterate thru connections
-    print_thread_linked_list();
+    //print_thread_linked_list();
     struct thread_message *crawl = thread_head;
     size_t n; 
     int connfd;
@@ -126,17 +128,15 @@ void do_put(struct cmdlineinfo cmdline){
             crawl = crawl->next;
             continue;
         }
-        //printf("connfd: %d\n", connfd);
-        
-        //printf("Sending: %c\n", crawl->send_chunks0[0]);
        
-        write(connfd, crawl->send_chunks0, strlen(crawl->send_chunks0));
+        n = write(connfd, crawl->send_chunks0, crawl->chunk0_len);
+        printf("Send bytes: %d\n", n);
 
         n = read(crawl->connfd, buf, MAXBUF); 
        
-        //printf("Sending: %c\n", crawl->send_chunks1[0]);
        
-        write(connfd, crawl->send_chunks1, strlen(crawl->send_chunks1));
+        n = write(connfd, crawl->send_chunks1, crawl->chunk1_len);
+        printf("Send bytes: %d\n", n);
         
         n = read(crawl->connfd, buf, MAXBUF); 
 
@@ -144,7 +144,6 @@ void do_put(struct cmdlineinfo cmdline){
     }
     
     // delete message linked list
-    //printf("Deleting linked lists...\n");
     delete();
 }
 
@@ -153,7 +152,7 @@ void do_get(struct cmdlineinfo cmdline){
     create_linked_list();
 
     // create socket and connect to servers
-    parse_config_and_connect(cmdline);
+    struct client_info cinfo = parse_config_and_connect(cmdline, 1);
 
     // parse message linked list and populate file and chunk linked lists
     print_linked_list_get();
@@ -172,18 +171,17 @@ void do_get(struct cmdlineinfo cmdline){
         buf = strdup(crawl->msg);
         char * temp1 = strtok_r(buf, "\r\n", &buf);
         temp1 = strdup(temp1);
-        //printf("Msg1--\n%s\n", temp1);
         int chunk1 = split_getfile_and_chunk(temp1);
         temp1 = temp1+1;
-        //printf("Msg1after--\n%s\n", temp1);
+
 
         char * temp2 = strtok_r(buf, "\r\n", &buf);
         if(temp2 != NULL){
             temp2 = strdup(temp2);
         }
-      
         int chunk2 = split_getfile_and_chunk(temp2);
         temp2 = temp2+1;
+
 
         insert_file_and_chunk_node(cmdline.fn, temp1, 0, chunk1);
         insert_file_and_chunk_node(cmdline.fn, temp2, 0, chunk2);
@@ -228,7 +226,6 @@ void do_get(struct cmdlineinfo cmdline){
                 }
                 n = strlen(ptr->msg);
                 fwrite(ptr->msg, 1, n, fp);
-                //printf("Appended:\n%s\n", ptr->msg);
                 fclose(fp); 
                 i++;
             
@@ -294,7 +291,6 @@ void * thread(void * argument)
         return NULL;
     }
     
-
     // receive msg
     char buf[MAXBUF]; 
     bzero(buf, MAXBUF);
@@ -318,24 +314,10 @@ void * thread(void * argument)
         return NULL;
     }
 
-    printf("Received:--\n%s\n", cache_buf);
-
-    // if(strcasecmp("GET", cmd) == 0){
-    //     write(connfd, "\r\n", strlen("\r\n"));
-    //     while((n = read(connfd, buf, MAXBUF)) > 0){
-    //     // make sure allocated memory is large enough
-    //     if((cache_buf = realloc(cache_buf, size + n * sizeof(char))) == NULL){
-    //         pthread_exit(NULL);
-    //         return NULL;
-    //     }
-    //     memcpy(cache_buf + size, buf, n);
-    //     size+=n;   
-    // }
-    // }
+    //printf("Received:--\n%s\n", cache_buf);
 
     printf("\n\nBytes received: %d\n", size);
 
-    //printf("------Received----\n%s\n", cache_buf);
 
     struct thread_message * target_server_node = find_server_node(server_num);
     if(target_server_node == NULL){
@@ -344,13 +326,11 @@ void * thread(void * argument)
         return NULL;
     }
     target_server_node->msg = calloc(1, strlen(cache_buf));
-    strcpy(target_server_node->msg, cache_buf);//, sizeof(cache_buf));;
+    strcpy(target_server_node->msg, cache_buf);
     target_server_node->connfd = connfd;
 
     
     free(cache_buf);
-    //printf("in server node messg: %s\n", target_server_node->msg);
-    //close(connfd);
     //printf("THREAD - Connection closed\n");
     pthread_exit(NULL);
     return NULL;

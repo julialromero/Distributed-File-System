@@ -119,7 +119,7 @@ void parse_and_execute(char * buf, int connfd){
 
         // check if file exists in dir
         int done = 0;
-        get_and_send_files_recursively(path, connfd, info.file, &done);
+        get_and_send_files_recursively(path, connfd, info.file, &done, &info);
     }
 
     if(strcasecmp("LIST", info.cmd) == 0){

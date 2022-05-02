@@ -71,7 +71,7 @@ void display_and_handle_menu(){
 
 //--------------FUNCS FOR CONNECTING TO SOCKET--------------//
 
-void parse_config_and_connect(struct cmdlineinfo args){
+struct client_info parse_config_and_connect(struct cmdlineinfo args, int to_connect){
     // open file and parse this info
     FILE * fp;
     char temp1[LISTENQ];
@@ -100,6 +100,10 @@ void parse_config_and_connect(struct cmdlineinfo args){
     temp = strtok_r(buf, "\n", &buf);
     info.pass = strdup(temp);
 
+    if(to_connect != 1){
+        return info;
+    }
+
     // construct the message to send, store in buf
     int count = 0;
     pthread_t tid[4];   // assume we know there are 4 servers
@@ -109,8 +113,6 @@ void parse_config_and_connect(struct cmdlineinfo args){
             break;
         }
         temp = strtok_r(buf, " ", &buf);    //server directory name
-        // printf("fn:\n");
-        // printf("%s\n", args.fn);
         create_msg(&info, temp, args);
 
         ip = strtok_r(buf, ":", &buf);
@@ -128,7 +130,7 @@ void parse_config_and_connect(struct cmdlineinfo args){
     for (int i = 0; i < 4; i++)
        pthread_join(tid[i], NULL);
 
-    return;
+    return info;
 }
 
 void connect_to_server(struct client_info *info, char * ip, int port, int count, pthread_t tid[4], struct cmdlineinfo cmdinfo){
@@ -241,7 +243,7 @@ struct thread_message * find_server_node(int target_server_num){
 }
 
 int split_fn_and_chunk(char * fn){
-    printf("DEBUG: Received filename: %s\n", fn);
+    //printf("DEBUG: Received filename: %s\n", fn);
     int len = strlen(fn);
     char digit = fn[len-1];
     fn[len - 1] = '\0';
@@ -251,8 +253,6 @@ int split_fn_and_chunk(char * fn){
 }
 
 int split_getfile_and_chunk(char * recv){
-    //printf("DEBUG: Received filename: %s\n", fn);
-    //int len = strlen(fn);
     char digit = recv[0];
     recv = recv + 1;
     int i = digit - '0';
@@ -260,12 +260,6 @@ int split_getfile_and_chunk(char * recv){
 }
 
 void insert_file_and_chunk_node(char * fn, char * send_msg, int is_list, int chunk_num){ //  TODO: change this to char * bc easier
-    //printf("DEBUG: Inserting file node\n");
-    // list sends a filename
-    // if(is_list == 1){
-    //     chunk_num = split_fn_and_chunk(recv);
-    // }
-    
     if(file_head == NULL){
         struct file_node * node = calloc(1, sizeof(struct file_node));
         node->filename = calloc(1, strlen(fn));
@@ -311,13 +305,12 @@ void compute_if_files_are_complete(){
         struct chunk_node * chucrawl = crawl->head;
         int sum = 0;
         while(chucrawl != NULL){
-            //printf("chunk num: %d\n", chucrawl->chunknum);
             sum += chucrawl->chunknum;
             chucrawl = chucrawl->next;
         }
         
         // if all 4 parts are received, sum of chunknum is 6 (0 + 1 + 2 + 3)
-        printf("Sum: %d\n", sum);
+        //printf("Sum: %d\n", sum);
         if(sum == 6){
             crawl->is_complete = 1;
         }
@@ -334,7 +327,7 @@ void add_chunk(struct file_node *filenode, char * chunk_msg, int is_list, int nu
     // this function will create a chunk node and add it to the chunk linked list
     // if is-list is 1 then it will just update chunknode->chunkname and chunknode->filename  
     
-    printf("---------\nDEBUG: filenode name: %s\n", filenode->filename); 
+    
     // first check if this chunk has already been collected
     struct chunk_node * crawl_chunks = filenode->head;
     while(crawl_chunks != NULL){
@@ -366,7 +359,6 @@ void add_chunk(struct file_node *filenode, char * chunk_msg, int is_list, int nu
     chucrawl->next = new_node;
   
     if(is_list == 1){
-        //printf("list\n");
         return;
     }
 
@@ -374,7 +366,6 @@ void add_chunk(struct file_node *filenode, char * chunk_msg, int is_list, int nu
     if(chunk_msg == NULL){
         printf("NULL!!!!\n");
     }
-    //printf("ADDING MESSAGE: %s\n", chunk_msg);
     new_node->msg = chunk_msg;
 
     return;
@@ -411,6 +402,7 @@ void delete(){
          free(temp);
      }
      
+     
      // delete other linked lists
      if(file_head == NULL){
          return;
@@ -442,6 +434,18 @@ void delete_chunk_list(struct chunk_node * head){
 
 
 //--------------PUT HELPER FUNCS--------------//
+
+// Encryption method
+char * XOR_encryption(char * str, char * pass, int strleng, int passlen){
+	
+    char * result = (char *)calloc(1, sizeof(char) * strleng);
+    int i;
+	for (i = 0; i < strleng; i++) {
+		result[i] = str[i] ^ pass[i % passlen]; // XOR operation between password and every character in string
+	}
+   
+	return result;
+}
 
 // Run system call for md5. Adapted for MacOS.
 int md5sum(char *file_name)
@@ -500,7 +504,7 @@ int pick_delegation_scheme(int x){
     return 1;
 }
 
-void separate_file_to_chunks_and_store(int floor, FILE * fp, int x){
+void separate_file_to_chunks_and_store(int floor, FILE * fp, int x, struct client_info cinfo){
     // read each chunk into file buf
     char file[MAXBUF];
     bzero(file, MAXBUF);
@@ -517,7 +521,7 @@ void separate_file_to_chunks_and_store(int floor, FILE * fp, int x){
         pos += (int)num_bytes;
         fseek(fp, pos, SEEK_SET);
 
-        delegate_chunk_to_server(&server_num, file, i); 
+        delegate_chunk_to_server(&server_num, file, i, num_bytes, cinfo); 
  
     }
     bzero(file, MAXBUF);
@@ -525,26 +529,37 @@ void separate_file_to_chunks_and_store(int floor, FILE * fp, int x){
     pos += (int)num_bytes;
     fseek(fp, pos, SEEK_SET);
 
-    delegate_chunk_to_server(&server_num, file, i); 
+    delegate_chunk_to_server(&server_num, file, i, num_bytes, cinfo); 
 
 }
 
 // this function stores the chunk with the corresponding server node based on x, the MD5SUM
-void delegate_chunk_to_server(int * server_num, char * file, int chunk_num){
+void delegate_chunk_to_server(int * server_num, char * file, int chunk_num, int filelen, struct client_info cinfo){
     // for each assigned server
     int i;
    
     int length = snprintf( NULL, 0, "%d", chunk_num);
     char* str = malloc( length + 1 );
-    snprintf( str, length + 1, "%d", chunk_num);
+    snprintf(str, length + 1, "%d", chunk_num);
     
-
-    int len = strlen(str) + strlen(file);
-    char * this_send_chunk = calloc(1, len);
+    int len = strlen(str) + filelen;
+    char * this_send_chunk = (char * )calloc(1, sizeof(char) * len);
     bzero(this_send_chunk, len);
     strcpy(this_send_chunk, str);
     strcat(this_send_chunk, file);
-  
+
+    free(str);
+
+    // encrypt file chunk
+    char * encrypted = XOR_encryption(this_send_chunk, cinfo.pass, len, strlen(cinfo.pass));
+
+    // encrypted message is not a valid c string (with null termination) so we have to manually do some operations 
+    // now copy encrypted msg over
+    for(int i = 0; i < len; i++){
+        this_send_chunk[i] = encrypted[i];
+    }
+    free(encrypted);
+
     for(i = 0; i < 2; i++){
         //printf("Delegating to server %d\n", *server_num);
         struct thread_message * crawl = thread_head;
@@ -553,10 +568,15 @@ void delegate_chunk_to_server(int * server_num, char * file, int chunk_num){
             if(crawl->server_num - 1 == *server_num){
                 
                 if(crawl->send_chunks0 == NULL){
-                    crawl->send_chunks0 = strdup(this_send_chunk);
+                    crawl->send_chunks0 = (char * )calloc(1, sizeof(char) * len+4); // give some extra memory for the encrypted chars
+                    memcpy(crawl->send_chunks0, this_send_chunk, len);
+                    crawl->chunk0_len = len;
+                    
                 }
                 else{
-                    crawl->send_chunks1 = strdup(this_send_chunk); 
+                    crawl->send_chunks1 = (char * )calloc(1, sizeof(char) * len+4);
+                    memcpy(crawl->send_chunks1, this_send_chunk, len);
+                    crawl->chunk1_len = len;
                 }
             }
             crawl = crawl->next;
@@ -565,7 +585,7 @@ void delegate_chunk_to_server(int * server_num, char * file, int chunk_num){
             *server_num = (*server_num + 1) % 4; // bound betweeen 1 to 4
         }
     }
-    free(this_send_chunk);
+    //free(this_send_chunk);
 }
 
 void print_thread_linked_list(){

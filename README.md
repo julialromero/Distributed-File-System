@@ -1,4 +1,4 @@
-README
+README<br>
 ------Client------<br>
 The client runs a looped menu. When a user inputs a command, the parameters are parsed and the client tries to connect to each of the servers listed in the configuration file. 
 Upon, successful connection, a thread is spawned to handle that connection. A message is sent to the server and receieved from the server. Received messages from each server are stored in a linked list in dynamic memory.

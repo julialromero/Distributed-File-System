@@ -305,13 +305,13 @@ void compute_if_files_are_complete(){
         struct chunk_node * chucrawl = crawl->head;
         int sum = 0;
         while(chucrawl != NULL){
-            sum += chucrawl->chunknum;
+            sum += chucrawl->chunknum + 1;
             chucrawl = chucrawl->next;
         }
         
         // if all 4 parts are received, sum of chunknum is 6 (0 + 1 + 2 + 3)
-        //printf("Sum: %d\n", sum);
-        if(sum == 6){
+        printf("Sum: %d\n", sum);
+        if(sum == 10){
             crawl->is_complete = 1;
         }
         else{

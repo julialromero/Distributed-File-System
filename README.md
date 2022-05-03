@@ -20,4 +20,4 @@ gcc ServerHelper.c dfserver.c -o server <br>
  <br> <br>
  Run with: <br>
  ./client dfc.conf <br>
- ./server $\ge$PORT NUM$\ie$
+ ./server < PORT NUM >

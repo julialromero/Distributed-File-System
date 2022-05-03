@@ -19,5 +19,5 @@ gcc dfclient.c ClientHelper.c -o client <br>
 gcc ServerHelper.c dfserver.c -o server <br>
  <br> <br>
  Run with: <br>
- ./client dfc.conf
- ./server <PORT NUM>
+ ./client dfc.conf <br>
+ ./server $\ge$PORT NUM$\ie$
